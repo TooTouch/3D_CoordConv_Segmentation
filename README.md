@@ -1,3 +1,3 @@
 # MM-WHS
 
-간단한 image에 대한 설
+간단한 image에 대한 설명 
