@@ -4,7 +4,7 @@ from keras import optimizers as op
 from keras import layers
 from keras import models
 
-from .unet_build import unet_model_3d
+from .unet_build import Unet3d
 from .loaddata import Load_Data
 
 import os
@@ -138,14 +138,14 @@ class State_Train:
 		print('Load Model')
 		print('Model name: ', self.save_name)
 		print('-'*100)
-
-		self.model = unet_model_3d(input_shape,
-									n_labels=self.class_num,
-									initial_learning_rate=0.00001,
-									n_base_filters=32,
-									include_label_wise_dice_coefficients=True,
-									batch_normalization=False,
-									activation_name="relu")
+		unet = Unet3d(input_shape=self.input_shape,
+						n_labels=self.class_num,
+						initial_learning_rate=0.00001,
+						n_base_filters=32,
+						include_label_wise_dice_coefficients=True,
+						batch_normalization=False,
+						activation_name="relu")
+		self.model = unet.build()
 
 		print('Complete')
 		print('='*100)
