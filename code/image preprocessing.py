@@ -68,10 +68,11 @@ def resizing_3d(images):
             im = resizing(im, 256)
             pad_img[j, :, :] = np.asarray(im)
 
-        pad_img = nib.Nifti1Image(pad_img, affine=np.eye(4))
+        # pad_img = nib.Nifti1Image(pad_img, affine=np.eye(4))
+        pad_img = pad_img.reshape(256,256,256,1)
         processed_imgs.append(pad_img)
 
-    return processed_imgs
+    return np.array(processed_imgs)
 
 
 # Load train images
@@ -155,10 +156,15 @@ mr_test_pad_images = resizing_3d(mr_test_images)
 
 
 
-with h5py.File(save_dir,'w') as hf:
-    hf.create_dataset('ct_images', data=ct_pad_images, compression='lzf')
-    hf.create_dataset('ct_images', data=ct_pad_labels, compression='lzf')
-    hf.create_dataset('ct_images', data=mr_pad_images, compression='lzf')
-    hf.create_dataset('ct_images', data=mr_pad_labels, compression='lzf')
-    hf.create_dataset('ct_images', data=ct_test_pad_images, compression='lzf')
-    hf.create_dataset('ct_images', data=mr_test_pad_images, compression='lzf')
+with h5py.File(save_dir + '/train_hf','w') as train_set:
+    train_set.create_dataset('ct_images', data=ct_pad_images, compression='lzf')
+    train_set.create_dataset('ct_labels', data=ct_pad_labels, compression='lzf')
+    train_set.create_dataset('mr_images', data=mr_pad_images, compression='lzf')
+    train_set.create_dataset('mr_labels', data=mr_pad_labels, compression='lzf')
+train_set.close()
+
+
+with h5py.File(save_dir + '/test_hf','w') as test_set:
+    test_set.create_dataset('ct_test_images', data=ct_test_pad_images, compression='lzf')
+    test_set.create_dataset('mr_test_images', data=mr_test_pad_images, compression='lzf')
+test_set.close()
