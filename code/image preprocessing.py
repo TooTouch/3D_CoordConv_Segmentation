@@ -68,11 +68,11 @@ def resizing_3d(images):
             im = resizing(im, 256)
             pad_img[j, :, :] = np.asarray(im)
 
-        # pad_img = nib.Nifti1Image(pad_img, affine=np.eye(4))
         pad_img = pad_img.reshape(256,256,256,1)
+        pad_img = nib.Nifti1Image(pad_img, affine=np.eye(4))
         processed_imgs.append(pad_img)
 
-    return np.array(processed_imgs)
+    return processed_imgs
 
 
 # Load train images
@@ -131,12 +131,12 @@ for mr_image in mr_images:
 print('=' * 100)
 print('Training')
 print('-'*100)
-print('MR processing')
+print('CT processing')
 print('-'*100)
 ct_pad_images = resizing_3d(ct_images)
 ct_pad_labels = resizing_3d(ct_labels)
 
-print('CT processing')
+print('MR processing')
 print('-' * 100)
 mr_pad_images = resizing_3d(mr_images)
 mr_pad_labels = resizing_3d(mr_labels)
@@ -146,11 +146,11 @@ mr_pad_labels = resizing_3d(mr_labels)
 print('=' * 100)
 print('Test')
 print('-'*100)
-print('MR processing')
+print('CT processing')
 print('-'*100)
 ct_test_pad_images = resizing_3d(ct_test_images)
 
-print('CT processing')
+print('MR processing')
 print('-' * 100)
 mr_test_pad_images = resizing_3d(mr_test_images)
 
