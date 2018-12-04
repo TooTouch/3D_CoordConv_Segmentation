@@ -70,43 +70,44 @@ def onehotencoder(img, class_num):
     # flatten
     raw_shape = img.shape
     flatten_img = img.reshape(-1)
+    class_num = class_num + 1 # background
     # encoder
     label_encoder = preprocessing.LabelEncoder()
     label_img = label_encoder.fit_transform(flatten_img)
     onehot_img = to_categorical(label_img, class_num)
     # reshape to raw shape
-    onehot_img = onehot_img.reshape(raw_shape[:-1] + (class_num+1,))
+    onehot_img = onehot_img.reshape(raw_shape[:-1] + (class_num,))
 
     return onehot_img
 
-def preprocessing(images, mask=False):
+def preprocess(images, mask=False):
     '''
-    preprocessing image : zero padding, rescale, onehotencoding
+    preprocess image : zero padding, rescale, onehotencoding
     :param images: Raw images
     :param mask: If mask is True, then class values convert to one-hot-vector
     :return: preprocessed images
     '''
     processed_imgs = list()
     for img in tqdm(images):
-        resized_img = np.zeros((256, 256, img.shape[2]))
-        pad_img = np.zeros((256, 256, 256))
+        resized_img = np.zeros((128, 128, img.shape[2]))
+        pad_img = np.zeros((128, 128, 128))
         for i in range(img.shape[2]):
             im = Image.fromarray(img.get_data()[:, :, i])
-            resized_img[:, :, i] = np.asarray(im.resize((256, 256)))
+            resized_img[:, :, i] = np.asarray(im.resize((128, 128)))
 
         resized_img[resized_img < 0] = 0
 
         for j in range(resized_img.shape[0]):
             im = Image.fromarray(resized_img[j, :, :])
-            im = resizing(im, 256)
+            im = resizing(im, 128)
             pad_img[j, :, :] = np.asarray(im)
 
-        pad_img = pad_img.reshape(256,256,256,1)
-        pad_img = pad_img / 255.
+        pad_img = pad_img.reshape(128,128,128,1)
+        pad_img = pad_img / np.max(pad_img)
         # pad_img = nib.Nifti1Image(pad_img, affine=np.eye(4))
 
         if mask:
-            pad_img = onehotencoder(pad_img)
+            pad_img = onehotencoder(pad_img, class_num=7)
 
         processed_imgs.append(pad_img)
 
@@ -165,14 +166,14 @@ for mr_image in mr_images:
 
 
 
-# image preprocessing
+# image preprocess
 print('=' * 100)
 print('Training')
 print('-'*100)
 print('CT processing')
 print('-'*100)
-ct_pad_images = preprocessing(ct_images); del(ct_images)
-ct_pad_labels = preprocessing(ct_labels, mask=True); del(ct_labels)
+ct_pad_images = preprocess(ct_images); del(ct_images)
+ct_pad_labels = preprocess(ct_labels, mask=True); del(ct_labels)
 # # Save
 # image_idx = 0
 # label_idx = 0
@@ -188,8 +189,8 @@ ct_pad_labels = preprocessing(ct_labels, mask=True); del(ct_labels)
 
 print('MR processing')
 print('-' * 100)
-mr_pad_images = preprocessing(mr_images); del(mr_images)
-mr_pad_labels = preprocessing(mr_labels, mask=True); del(mr_labels)
+mr_pad_images = preprocess(mr_images); del(mr_images)
+mr_pad_labels = preprocess(mr_labels, mask=True); del(mr_labels)
 # # Save
 # image_idx = 0
 # label_idx = 0
@@ -208,7 +209,7 @@ print('Test')
 print('-'*100)
 print('CT processing')
 print('-'*100)
-ct_test_pad_images = preprocessing(ct_test_images); del(ct_test_images)
+ct_test_pad_images = preprocess(ct_test_images); del(ct_test_images)
 # for i in range(len(ct_test_list)):
 #     save_dir = os.path.join(ct_test_save_dir, ct_test_list[i])
 #     nib.save(ct_test_pad_images[i], save_dir)
@@ -216,7 +217,7 @@ ct_test_pad_images = preprocessing(ct_test_images); del(ct_test_images)
 
 print('MR processing')
 print('-' * 100)
-mr_test_pad_images = preprocessing(mr_test_images); del(mr_test_images)
+mr_test_pad_images = preprocess(mr_test_images); del(mr_test_images)
 # for i in range(len(mr_test_list)):
 #     save_dir = os.path.join(mr_test_save_dir, mr_test_list[i])
 #     nib.save(mr_test_pad_images[i], save_dir)

@@ -2,6 +2,7 @@ from keras import callbacks as cb
 
 from loaddata import Load_Data
 from unet_build import Unet3d
+from keras.preprocessing.image import ImageDataGenerator
 
 import os
 import numpy as np
@@ -39,7 +40,7 @@ class State_Train:
 
 		# model 
 		self.model = None
-		self.input_shape = (1,256,256,256)
+		self.input_shape = (1,128,128,128)
 
 	def run(self):
 		# Load image
@@ -61,10 +62,10 @@ class State_Train:
 
 
 		# Data generator
-		ct_train = self.data_generator(images=ct_train_images, labels=ct_train_labels, batch_size=self.batch_size)
-		ct_val = self.data_generator(images=ct_valid_images, labels=ct_valid_labels, batch_size=self.batch_size)
-		mr_train = self.data_generator(images=mr_train_images, labels=mr_train_labels, batch_size=self.batch_size)
-		mr_val = self.data_generator(images=mr_valid_images, labels=mr_valid_labels, batch_size=self.batch_size)
+		# ct_train = self.data_generator(images=ct_train_images, labels=ct_train_labels, batch_size=self.batch_size)
+		# ct_val = self.data_generator(images=ct_valid_images, labels=ct_valid_labels, batch_size=self.batch_size)
+		# mr_train = self.data_generator(images=mr_train_images, labels=mr_train_labels, batch_size=self.batch_size)
+		# mr_val = self.data_generator(images=mr_valid_images, labels=mr_valid_labels, batch_size=self.batch_size)
 
 		# Check
 		print('='*100)
@@ -78,16 +79,17 @@ class State_Train:
 		print('Train dataset shape: ', mr_train_images.shape)
 		print('Validation dataset shape: ', mr_valid_images.shape)
 
-		# del
-		del (ct_train_images, ct_train_labels, ct_valid_images, ct_valid_labels)
-		del (mr_train_images, mr_train_labels, mr_valid_images, mr_valid_labels)
+		# # del
+		# del (ct_train_images, ct_train_labels, ct_valid_images, ct_valid_labels)
+		# del (mr_train_images, mr_train_labels, mr_valid_images, mr_valid_labels)
 
 		# model
 		self.model_(input_shape=self.input_shape)
+		print(self.model.summary())
 
 		# train
-		history, train_time = self.training(train=mr_train, val=mr_val, size=mr_size)
-
+		# history, train_time = self.training(train=mr_train, val=mr_val, size=mr_size)
+		history, train_time = self.training(X=mr_train_images, Y=mr_train_labels, ValX=mr_valid_images, ValY=mr_valid_labels)
 		# report
 		self.report_json(history=history, time=train_time)
 
@@ -127,12 +129,23 @@ class State_Train:
 		:return: if batch_size is 3, then yield [x1,x2,x3], [y1,y2,y3]
 		'''
 
-		img_cnt = images.shape[0]
-		steps_size = img_cnt // batch_size
 
-		for i in range(steps_size):
-			batch_x, batch_y = images[batch_size*i:batch_size*(i+1)], labels[batch_size*i:batch_size*(i+1)]
+		datagen = ImageDataGenerator(
+		)
+		iterator = datagen.flow(
+			x=images,
+			y=labels,
+			batch_size=batch_size
+		)
+		for batch_x, batch_y in iterator:
 			yield batch_x, batch_y
+		#
+		# img_cnt = images.shape[0]
+		# steps_size = img_cnt // batch_size
+		#
+		# for i in range(steps_size):
+		# 	batch_x, batch_y = images[batch_size*i:batch_size*(i+1)], labels[batch_size*i:batch_size*(i+1)]
+		# 	yield batch_x, batch_y
 
 
 
@@ -143,10 +156,11 @@ class State_Train:
 		print('-'*100)
 		unet = Unet3d(input_shape=self.input_shape,
 						n_labels=self.class_num,
-						initial_learning_rate=0.00001,
+						initial_learning_rate=0.0001,
 						n_base_filters=32,
 						include_label_wise_dice_coefficients=True,
 						batch_normalization=False,
+					  	deconvolution=True,
 						activation_name="softmax")
 		self.model = unet.build()
 
@@ -154,7 +168,7 @@ class State_Train:
 		print('='*100)
 			
 
-	def training(self, train, val, size, weights=None):
+	def training(self, X, Y, ValX, ValY, weights=None):
 		print('='*100)
 		print('Start training')
 		print('-'*100)
@@ -163,14 +177,23 @@ class State_Train:
 		es = cb.EarlyStopping(monitor='val_loss', min_delta=0, patience=10, verbose=1, mode='auto')
 		# rlp = cb.ReduceLROnPlateau(monitor='val_loss', factor=0.75, patience=5, verbose=1, mode='auto', min_delta=0.0001, cooldown=0, min_lr=0.000001)
 		start = time.time()
-		history = self.model.fit_generator(generator=train,
-											steps_per_epoch=size[0]//self.batch_size,
-											epochs=self.epochs,
-											validation_data=val,
-											validation_steps=size[1]//self.batch_size,
-											class_weight=weights,
-											callbacks=[es,ckp]
-						   )
+		history = self.model.fit(x=X, y=Y,
+								batch_size=self.batch_size,
+								epochs=self.epochs,
+								verbose=2,
+								callbacks=[es,ckp],
+								validation_data=(ValX, ValY),
+								shuffle=True,
+								class_weight=weights)
+		# history = self.model.fit_generator(generator=train,
+		# 									steps_per_epoch=size[0]//self.batch_size,
+		# 									epochs=self.epochs,
+		# 									validation_data=val,
+		# 									validation_steps=size[1]//self.batch_size,
+		# 									class_weight=weights,
+		# 								    verbose=2,
+		# 									callbacks=[es,ckp]
+		# 				   )
 		e = int(time.time() - start)
 		print('-'*100)
 		print('Complete')
@@ -188,15 +211,18 @@ class State_Train:
 		log['NAME'] = self.name
 		log['TIME'] = time
 		log['INPUT_SHAPE'] = self.model.input_shape
+
 		m_compile['OPTIMIZER'] = str(type(self.model.optimizer))
-		m_compile['LOSS'] = self.model.loss
-		m_compile['METRICS'] = self.model.metrics_names
+		m_compile['LOSS'] = str(self.model.loss)
+		m_compile['METRICS'] = str(self.model.metrics_names)
 		log['COMPILE'] = m_compile
+
 		h = history.params
 		h['LOSS'] = history.history['loss']
 		h['DSC'] = history.history['dice_coefficient']
 		h['VAL_LOSS'] = history.history['val_loss']
 		h['VAL_DSC'] = history.history['val_dice_coefficient']
+
 		log['HISTORY'] = h
 
 		print('='*100)

@@ -41,7 +41,7 @@ class Unet3d:
         to train the model.
         :param depth: indicates the depth of the U-shape for the model. The greater the depth, the more max pooling
         layers will be added to the model. Lowering the depth may reduce the amount of memory required for training.
-        :param input_shape: Shape of the input data (n_chanels, x_size, y_size, z_size). The x, y, and z sizes must be
+        :param input_shape: Shape of the input data (x_size, y_size, z_size, n_chanels). The x, y, and z sizes must be
         divisible by the pool size to the power of the depth of the UNet, that is pool_size^depth.
         :param pool_size: Pool size for the max pooling operations.
         :param n_labels: Number of binary labels that the model is learning.
@@ -56,10 +56,8 @@ class Unet3d:
 
         # add levels with max pooling
         for layer_depth in range(self.depth):
-            layer1 = self.create_convolution_block(input_layer=current_layer, n_filters=self.n_base_filters*(2**layer_depth),
-                                              batch_normalization=self.batch_normalization)
-            layer2 = self.create_convolution_block(input_layer=layer1, n_filters=self.n_base_filters*(2**layer_depth)*2,
-                                              batch_normalization=self.batch_normalization)
+            layer1 = self.create_convolution_block(input_layer=current_layer, n_filters=self.n_base_filters*(2**layer_depth))
+            layer2 = self.create_convolution_block(input_layer=layer1, n_filters=self.n_base_filters*(2**layer_depth))
             if layer_depth < self.depth - 1:
                 current_layer = MaxPooling3D(pool_size=self.pool_size, data_format = 'channels_first')(layer2)
                 levels.append([layer1, layer2, current_layer])
@@ -69,34 +67,33 @@ class Unet3d:
 
         # add levels with up-convolution or up-sampling
         for layer_depth in range(self.depth-2, -1, -1):
-            up_convolution = self.get_up_convolution(pool_size=self.pool_size, deconvolution=self.deconvolution,
-                                                n_filters=current_layer._keras_shape[1])(current_layer)
+            up_convolution = self.get_up_convolution(pool_size=self.pool_size,
+                                                     n_filters=self.n_base_filters*(2**layer_depth))(current_layer)
             concat = concatenate([up_convolution, levels[layer_depth][1]], axis=1)
-            current_layer = self.create_convolution_block(n_filters=levels[layer_depth][1]._keras_shape[1],
-                                                     input_layer=concat, batch_normalization=self.batch_normalization)
-            current_layer = self.create_convolution_block(n_filters=levels[layer_depth][1]._keras_shape[1],
-                                                     input_layer=current_layer,
-                                                     batch_normalization=self.batch_normalization)
+            current_layer = self.create_convolution_block(n_filters=self.n_base_filters*(2**layer_depth),
+                                                     input_layer=concat)
+            current_layer = self.create_convolution_block(n_filters=self.n_base_filters*(2**layer_depth),
+                                                     input_layer=current_layer)
 
         final_convolution = Conv3D(self.n_labels, (1, 1, 1))(current_layer)
         act = Activation(self.activation_name)(final_convolution)
         model = Model(inputs=inputs, outputs=act)
 
         if not isinstance(self.metrics, list):
-            metrics = [self.metrics]
+            self.metrics = [self.metrics]
 
         if self.include_label_wise_dice_coefficients and self.n_labels > 1:
             label_wise_dice_metrics = [get_label_dice_coefficient_function(index) for index in range(self.n_labels)]
-            if metrics:
-                metrics = metrics + label_wise_dice_metrics
+            if self.metrics:
+                self.metrics = self.metrics + label_wise_dice_metrics
             else:
-                metrics = label_wise_dice_metrics
+                self.metrics = label_wise_dice_metrics
 
-        model.compile(optimizer=Adam(lr=self.initial_learning_rate), loss=dice_coefficient_loss, metrics=metrics)
+        model.compile(optimizer=Adam(lr=self.initial_learning_rate), loss=dice_coefficient_loss, metrics=self.metrics)
         return model
 
 
-    def create_convolution_block(self, input_layer, n_filters, batch_normalization=False, kernel=(3, 3, 3), activation=None,
+    def create_convolution_block(self, input_layer, n_filters, kernel=(3, 3, 3), activation=None,
                                  padding='same', strides=(1, 1, 1), instance_normalization=False):
         """
         :param strides:
@@ -109,7 +106,7 @@ class Unet3d:
         :return:
         """
         layer = Conv3D(n_filters, kernel, padding=padding, strides=strides)(input_layer)
-        if batch_normalization:
+        if self.batch_normalization:
             layer = BatchNormalization(axis=1)(layer)
         elif instance_normalization:
             try:
@@ -138,9 +135,8 @@ class Unet3d:
         return tuple([None, n_filters] + output_image_shape)
 
 
-    def get_up_convolution(self, n_filters, pool_size, kernel_size=(2, 2, 2), strides=(2, 2, 2),
-                           deconvolution=False):
-        if deconvolution:
+    def get_up_convolution(self, n_filters, pool_size, kernel_size=(2, 2, 2), strides=(2, 2, 2)):
+        if self.deconvolution:
             return Deconvolution3D(filters=n_filters, kernel_size=kernel_size,
                                    strides=strides)
         else:
