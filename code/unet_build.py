@@ -4,7 +4,7 @@ from keras.engine import Input, Model
 from keras.layers import Conv3D, MaxPooling3D, UpSampling3D, Activation, BatchNormalization, PReLU, Deconvolution3D
 from keras.optimizers import Adam
 
-from .metrics import dice_coefficient_loss, get_label_dice_coefficient_function, dice_coefficient
+from metrics import dice_coefficient_loss, get_label_dice_coefficient_function, dice_coefficient
 
 K.set_image_data_format("channels_first")
 
@@ -29,6 +29,7 @@ class Unet3d:
         self.batch_normalization = batch_normalization
         self.activation_name = activation_name
 
+
     def build(self):
         """
         Builds the 3D UNet Keras model.f
@@ -40,7 +41,7 @@ class Unet3d:
         to train the model.
         :param depth: indicates the depth of the U-shape for the model. The greater the depth, the more max pooling
         layers will be added to the model. Lowering the depth may reduce the amount of memory required for training.
-        :param input_shape: Shape of the input data (x_size, y_size, z_size, n_chanels). The x, y, and z sizes must be
+        :param input_shape: Shape of the input data (n_chanels, x_size, y_size, z_size). The x, y, and z sizes must be
         divisible by the pool size to the power of the depth of the UNet, that is pool_size^depth.
         :param pool_size: Pool size for the max pooling operations.
         :param n_labels: Number of binary labels that the model is learning.
@@ -60,7 +61,7 @@ class Unet3d:
             layer2 = self.create_convolution_block(input_layer=layer1, n_filters=self.n_base_filters*(2**layer_depth)*2,
                                               batch_normalization=self.batch_normalization)
             if layer_depth < self.depth - 1:
-                current_layer = MaxPooling3D(pool_size=self.pool_size)(layer2)
+                current_layer = MaxPooling3D(pool_size=self.pool_size, data_format = 'channels_first')(layer2)
                 levels.append([layer1, layer2, current_layer])
             else:
                 current_layer = layer2

@@ -4,9 +4,15 @@ import numpy as np
 
 class Load_Data:
     def __init__(self):
-        self.root = os.path.abspath(os.path.join(os.getcwd(),'../dataset/h5py'))
-        self.train_dir = os.path.join(self.root, '../h5py/train_hf')
-        self.test_dir = os.path.join(self.root, '../h5py.test_hf')
+        self.root = os.path.abspath(os.path.join(os.getcwd(),'../dataset/'))
+
+        # self.ct_train_dir = os.path.join(self.root, 'ct_train_test(processed)/ct_train')
+        # self.ct_test_dir = os.path.join(self.root, 'ct_train_test(processed)/ct_test')
+        # self.mr_train_dir = os.path.join(self.root, 'mr_train_test(processed)/mr_train')
+        # self.mr_test_dir = os.path.join(self.root, 'mr_train_test(processed)/mr_test')
+
+        self.train_dir = os.path.join(self.root, 'h5py/train_hf')
+        self.test_dir = os.path.join(self.root, 'h5py.test_hf')
 
     def train_load(self):
         print('='*100)
@@ -14,12 +20,18 @@ class Load_Data:
         print('Train data directory: ',self.train_dir)
         train_hf = h5py.File(self.train_dir, 'r')
 
-        ct_images = np.array(train_hf['ct_images'].get_data())
-        ct_labels = np.array(train_hf['ct_labels'].get_data())
-        mr_images = np.array(train_hf['mr_images'].get_data())
-        mr_labels = np.array(train_hf['mr_labels'].get_data())
+        ct_images = np.array(train_hf['ct_images'])
+        ct_labels = np.array(train_hf['ct_labels'])
+        mr_images = np.array(train_hf['mr_images'])
+        mr_labels = np.array(train_hf['mr_labels'])
 
         train_hf.close()
+
+        ct_images = np.moveaxis(ct_images,-1,1)
+        ct_labels = np.moveaxis(ct_labels,-1,1)
+        mr_images = np.moveaxis(mr_images,-1,1)
+        mr_labels = np.moveaxis(mr_labels,-1,1)
+
         print('Complete')
         return (ct_images, ct_labels), (mr_images, mr_labels)
 

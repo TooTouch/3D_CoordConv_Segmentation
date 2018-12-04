@@ -3,6 +3,10 @@ import numpy as np
 import os
 
 from PIL import Image
+
+from keras.utils import to_categorical
+from sklearn import preprocessing
+
 from tqdm import tqdm
 import h5py
 
@@ -15,7 +19,12 @@ mr_set = os.path.join(root, "mr_train_test/mr_train/")
 ct_test_dir = os.path.join(root,"ct_train_test/ct_test/")
 mr_test_dir = os.path.join(root,'mr_train_test/mr_test/')
 
-save_dir = os.path.join(root, 'h5py')
+save_dir = os.path.join(root,'h5py')
+
+ct_train_save_dir = os.path.join(root, 'ct_train_test(processed)/ct_train')
+ct_test_save_dir = os.path.join(root, 'ct_train_test(processed)/ct_test')
+mr_train_save_dir = os.path.join(root, 'mr_train_test(processed)/mr_train')
+mr_test_save_dir = os.path.join(root, 'mr_train_test(processed)/mr_test')
 
 # list directory
 ct_list = os.listdir(ct_set)
@@ -51,8 +60,32 @@ def resizing(img, resize):
 
     return bg
 
+def onehotencoder(img, class_num):
+    '''
+    :param img: zero padding image
+    :param class_num: Number of class and background
+    :return: converted to one-hot-vector by voxel (256,256,256,8)
+    '''
 
-def resizing_3d(images):
+    # flatten
+    raw_shape = img.shape
+    flatten_img = img.reshape(-1)
+    # encoder
+    label_encoder = preprocessing.LabelEncoder()
+    label_img = label_encoder.fit_transform(flatten_img)
+    onehot_img = to_categorical(label_img, class_num)
+    # reshape to raw shape
+    onehot_img = onehot_img.reshape(raw_shape[:-1] + (class_num+1,))
+
+    return onehot_img
+
+def preprocessing(images, mask=False):
+    '''
+    preprocessing image : zero padding, rescale, onehotencoding
+    :param images: Raw images
+    :param mask: If mask is True, then class values convert to one-hot-vector
+    :return: preprocessed images
+    '''
     processed_imgs = list()
     for img in tqdm(images):
         resized_img = np.zeros((256, 256, img.shape[2]))
@@ -69,7 +102,12 @@ def resizing_3d(images):
             pad_img[j, :, :] = np.asarray(im)
 
         pad_img = pad_img.reshape(256,256,256,1)
-        pad_img = nib.Nifti1Image(pad_img, affine=np.eye(4))
+        pad_img = pad_img / 255.
+        # pad_img = nib.Nifti1Image(pad_img, affine=np.eye(4))
+
+        if mask:
+            pad_img = onehotencoder(pad_img)
+
         processed_imgs.append(pad_img)
 
     return processed_imgs
@@ -133,26 +171,62 @@ print('Training')
 print('-'*100)
 print('CT processing')
 print('-'*100)
-ct_pad_images = resizing_3d(ct_images)
-ct_pad_labels = resizing_3d(ct_labels)
+ct_pad_images = preprocessing(ct_images); del(ct_images)
+ct_pad_labels = preprocessing(ct_labels, mask=True); del(ct_labels)
+# # Save
+# image_idx = 0
+# label_idx = 0
+# for i in range(len(ct_list)):
+#     save_dir = os.path.join(ct_train_save_dir, ct_list[i])
+#     if 'image' in ct_list[i]:
+#         nib.save(ct_pad_images[image_idx], save_dir)
+#         image_idx+=1
+#     else:
+#         nib.save(ct_pad_labels[label_idx], save_dir)
+#         label_idx+=1
+# del(ct_pad_images)
 
 print('MR processing')
 print('-' * 100)
-mr_pad_images = resizing_3d(mr_images)
-mr_pad_labels = resizing_3d(mr_labels)
-
-
+mr_pad_images = preprocessing(mr_images); del(mr_images)
+mr_pad_labels = preprocessing(mr_labels, mask=True); del(mr_labels)
+# # Save
+# image_idx = 0
+# label_idx = 0
+# for i in range(len(mr_list)):
+#     save_dir = os.path.join(mr_train_save_dir, mr_list[i])
+#     if 'image' in mr_list[i]:
+#         nib.save(mr_pad_images[image_idx], save_dir)
+#         image_idx += 1
+#     else:
+#         nib.save(mr_pad_labels[label_idx], save_dir)
+#         label_idx += 1
+# del(mr_pad_images)
 
 print('=' * 100)
 print('Test')
 print('-'*100)
 print('CT processing')
 print('-'*100)
-ct_test_pad_images = resizing_3d(ct_test_images)
+ct_test_pad_images = preprocessing(ct_test_images); del(ct_test_images)
+# for i in range(len(ct_test_list)):
+#     save_dir = os.path.join(ct_test_save_dir, ct_test_list[i])
+#     nib.save(ct_test_pad_images[i], save_dir)
+# del(ct_test_pad_images)
 
 print('MR processing')
 print('-' * 100)
-mr_test_pad_images = resizing_3d(mr_test_images)
+mr_test_pad_images = preprocessing(mr_test_images); del(mr_test_images)
+# for i in range(len(mr_test_list)):
+#     save_dir = os.path.join(mr_test_save_dir, mr_test_list[i])
+#     nib.save(mr_test_pad_images[i], save_dir)
+# del(mr_test_pad_images)
+
+
+
+
+
+
 
 
 
