@@ -1,0 +1,10 @@
+{
+	"NAME": "U-Net_3D",
+	"DATA": "CT",
+	"CLASS_NUM": 8,
+	"CV_RATE": 0.8,
+	"CV_SEED": 223,
+	"BATCH_SIZE": 1,
+	"EPOCHS": 500,
+	"OPTIMIZER": "adam"
+}

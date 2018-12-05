@@ -20,10 +20,16 @@ class Load_Data:
         print('Train data directory: ',self.train_dir)
         train_hf = h5py.File(self.train_dir, 'r')
 
-        ct_images = np.array(train_hf['ct_images'])
-        ct_labels = np.array(train_hf['ct_labels'])
-        mr_images = np.array(train_hf['mr_images'])
-        mr_labels = np.array(train_hf['mr_labels'])
+        ct_images = np.zeros((20, 128, 128, 128, 1))
+        ct_labels = np.zeros((20, 128, 128, 128, 8))
+        mr_images = np.zeros((20, 128, 128, 128, 1))
+        mr_labels = np.zeros((20, 128, 128, 128, 8))
+
+        for i in range(20):
+            ct_images[i,:,:,:,:] = np.array(train_hf['ct_image_{}'.format(i)])
+            ct_labels[i,:,:,:,:] = np.array(train_hf['ct_label_{}'.format(i)])
+            mr_images[i,:,:,:,:] = np.array(train_hf['mr_image_{}'.format(i)])
+            mr_labels[i,:,:,:,:] = np.array(train_hf['mr_label_{}'.format(i)])
 
         train_hf.close()
 
