@@ -4,7 +4,7 @@ from keras.engine import Input, Model
 from keras.layers import Conv3D, MaxPooling3D, UpSampling3D, Activation, BatchNormalization, PReLU, Deconvolution3D
 from keras.optimizers import Adam
 
-from metrics import dice_coefficient_loss, get_label_dice_coefficient_function, dice_coefficient
+from metrics import dice_coefficient_loss, get_label_dice_coefficient_function, dice_coefficient, weighted_dice_coefficient_loss
 
 K.set_image_data_format("channels_first")
 
@@ -89,7 +89,7 @@ class Unet3d:
             else:
                 self.metrics = label_wise_dice_metrics
 
-        model.compile(optimizer=Adam(lr=self.initial_learning_rate), loss=dice_coefficient_loss, metrics=self.metrics)
+        model.compile(optimizer=Adam(lr=self.initial_learning_rate), loss=weighted_dice_coefficient_loss, metrics=self.metrics)
         return model
 
 

@@ -13,7 +13,7 @@ from pprint import pprint
 from collections import OrderedDict
 import json
 
-class State_Train:
+class MMWHS_Train:
 	def __init__(self, json_file):
 		# directory
 		self.root_dir = os.path.abspath(os.path.join(os.getcwd(),'..'))
@@ -30,6 +30,7 @@ class State_Train:
 		print('='*100)
 		self.id = len(os.listdir(self.log_dir))
 		self.name = params['NAME']
+		self.data = params['DATA']
 		self.save_name = self.name + '_' + str(self.id)
 		self.class_num =  params['CLASS_NUM']
 		self.cv_rate = params['CV_RATE']
@@ -89,7 +90,11 @@ class State_Train:
 
 		# train
 		# history, train_time = self.training(train=mr_train, val=mr_val, size=mr_size)
-		history, train_time = self.training(X=mr_train_images, Y=mr_train_labels, ValX=mr_valid_images, ValY=mr_valid_labels)
+		if self.data == 'MR':
+			history, train_time = self.training(X=mr_train_images, Y=mr_train_labels, ValX=mr_valid_images, ValY=mr_valid_labels)
+		elif self.data == 'CT':
+			history, train_time = self.training(X=ct_train_images, Y=ct_train_labels, ValX=ct_valid_images, ValY=ct_valid_labels)
+
 		# report
 		self.report_json(history=history, time=train_time)
 
@@ -181,7 +186,7 @@ class State_Train:
 								batch_size=self.batch_size,
 								epochs=self.epochs,
 								verbose=2,
-								callbacks=[es,ckp],
+								callbacks=[ckp],
 								validation_data=(ValX, ValY),
 								shuffle=True,
 								class_weight=weights)
@@ -219,10 +224,25 @@ class State_Train:
 
 		h = history.params
 		h['LOSS'] = history.history['loss']
-		h['DSC'] = history.history['dice_coefficient']
+		h['DSC_TOTAL'] = history.history['dice_coefficient']
+		h['DSC0'] = history.history['label_0_DSC']
+		h['DSC1'] = history.history['label_1_DSC']
+		h['DSC2'] = history.history['label_2_DSC']
+		h['DSC3'] = history.history['label_3_DSC']
+		h['DSC4'] = history.history['label_4_DSC']
+		h['DSC5'] = history.history['label_5_DSC']
+		h['DSC6'] = history.history['label_6_DSC']
+		h['DSC7'] = history.history['label_7_DSC']
 		h['VAL_LOSS'] = history.history['val_loss']
-		h['VAL_DSC'] = history.history['val_dice_coefficient']
-
+		h['VAL_DSC_TOTAL'] = history.history['val_dice_coefficient']
+		h['VAL_DSC0'] = history.history['val_label_0_DSC']
+		h['VAL_DSC1'] = history.history['val_label_1_DSC']
+		h['VAL_DSC2'] = history.history['val_label_2_DSC']
+		h['VAL_DSC3'] = history.history['val_label_3_DSC']
+		h['VAL_DSC4'] = history.history['val_label_4_DSC']
+		h['VAL_DSC5'] = history.history['val_label_5_DSC']
+		h['VAL_DSC6'] = history.history['val_label_6_DSC']
+		h['VAL_DSC7'] = history.history['val_label_7_DSC']
 		log['HISTORY'] = h
 
 		print('='*100)
@@ -238,5 +258,5 @@ if __name__=='__main__':
 	parser.add_argument('--params', type=str, help='Json file name containig paramters')
 	args = parser.parse_args()
 
-	ST = State_Train(json_file=args.params)
+	ST = MMWHS_Train(json_file=args.params)
 	ST.run()
