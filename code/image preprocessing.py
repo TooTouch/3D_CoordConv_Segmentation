@@ -4,9 +4,9 @@ import os
 
 from keras.utils import to_categorical
 from sklearn import preprocessing
+import scipy.ndimage
 
 from tqdm import tqdm
-from dltk.io.preprocessing import *
 import h5py
 
 # Number of class (include background)
@@ -51,10 +51,50 @@ ct_pad_labels = list()
 mr_pad_images = list()
 mr_pad_labels = list()
 
+# label encoder
+label_encoder = preprocessing.LabelEncoder()
 
 # hfd5
 train_set = h5py.File(save_dir + '/train_hf','w')
 test_set = h5py.File(save_dir + '/test_hf','w')
+
+
+# functions
+def pad3d(array):
+    height = array.shape[0]
+    depth = array.shape[2]
+
+    if (height - depth) % 2:
+        pad_front = int((height + 1 - depth) / 2)
+        pad_back = int((height - 1 - depth) / 2)
+    else:
+        pad_front = pad_back = int((height - depth) / 2)
+
+    npad = ((0, 0), (0, 0), (pad_front, pad_back))
+    array_padding = np.pad(array, npad, 'constant', constant_values=(0))
+    array_padding[array_padding < 0] = 0
+
+    return array_padding
+
+
+def image_preprocess(image, new_size, mask=False):
+    assert np.sum(image.shape == image.shape[0]) != 3
+
+    ratio = new_size / image.shape[0]
+
+    image = scipy.ndimage.zoom(image, zoom=ratio, order=0)
+
+    if mask:
+        channel = 7 + 1  # background
+        image = image.reshape(-1)
+        image = label_encoder.fit_transform(image)
+        image = to_categorical(image, class_num)
+    else:
+        channel = 1
+    # reshape to raw shape
+    image = image.reshape((new_size,) * 3 + (channel,))
+
+    return image
 
 
 # Load train images
@@ -120,55 +160,34 @@ print('-'*100)
 
 
 for i in tqdm(range(len(ct_images))):
-    img = ct_images[i].get_data()
-    img = resize_image_with_crop_or_pad(img, [128, 128, 128], mode='symmetric').reshape(128,128,128,1)
+    image = ct_images[i].get_data()
+    image = pad3d(image)
+    image = image_preprocess(image, new_size=256)
+    train_set.create_dataset('ct_image_{}'.format(i), data=image, compression='lzf')
+    del(image)
 
-    train_set.create_dataset('ct_image_{}'.format(i), data=img, compression='lzf')
-    del(img)
-
-ct_pad_labels = np.zeros((len(ct_labels), 128, 128, 128, 8))
-label_encoder = preprocessing.LabelEncoder()
 for i in tqdm(range(len(ct_labels))):
-    img = ct_labels[i].get_data()
-    img = resize_image_with_crop_or_pad(img, [128, 128, 128], mode='symmetric')
-
-    # encoder
-    raw_shape = img.shape
-    img = img.reshape(-1)
-    img = label_encoder.fit_transform(img)
-    img = to_categorical(img, class_num)
-
-    # reshape to raw shape
-    img = img.reshape(raw_shape + (class_num,))
-
-    train_set.create_dataset('ct_label_{}'.format(i), data=img, compression='lzf')
+    image = ct_labels[i].get_data()
+    image = pad3d(image)
+    image = image_preprocess(image, new_size=256, mask=True)
+    train_set.create_dataset('ct_label_{}'.format(i), data=image, compression='lzf')
+    del(image)
 
 print('MR processing')
 print('-' * 100)
-mr_pad_images = np.zeros((len(mr_images),128,128,128,1))
 for i in tqdm(range(len(mr_images))):
-    img = mr_images[i].get_data()
-    img = resize_image_with_crop_or_pad(img, [128, 128, 128], mode='symmetric').reshape(128,128,128,1)
-    train_set.create_dataset('mr_image_{}'.format(i), data=img, compression='lzf')
+    image = mr_images[i].get_data()
+    image = pad3d(image)
+    image = image_preprocess(image, new_size=256)
+    train_set.create_dataset('mr_image_{}'.format(i), data=image, compression='lzf')
+    del(image)
 
-
-mr_pad_labels = np.zeros((len(mr_labels), 128, 128, 128, 8))
-label_encoder = preprocessing.LabelEncoder()
 for i in tqdm(range(len(mr_labels))):
-    img = mr_labels[i].get_data()
-    img = resize_image_with_crop_or_pad(img, [128, 128, 128], mode='symmetric')
-
-    # encoder
-    raw_shape = img.shape
-    img = img.reshape(-1)
-
-    img = label_encoder.fit_transform(img)
-    label, cnt = np.unique(img, return_counts=True)
-    img = to_categorical(img, class_num)
-
-    # reshape to raw shape
-    img = img.reshape(raw_shape + (class_num,))
-    train_set.create_dataset('mr_label_{}'.format(i), data=img, compression='lzf')
+    image = mr_labels[i].get_data()
+    image = pad3d(image)
+    image = image_preprocess(image, new_size=256, mask=True)
+    train_set.create_dataset('mr_label_{}'.format(i), data=image, compression='lzf')
+    del(image)
 train_set.close()
 
 
@@ -179,16 +198,18 @@ print('-'*100)
 print('CT processing')
 print('-'*100)
 for i in tqdm(range(len(ct_test_images))):
-    img = ct_test_images[i].get_data()
-    img = resize_image_with_crop_or_pad(img, [128, 128, 128], mode='symmetric').reshape(128,128,128,1)
-    test_set.create_dataset('ct_test_{}'.format(i), data=img, compression='lzf')
+    image = ct_test_images[i].get_data()
+    image = pad3d(image)
+    image = image_preprocess(image, new_size=256)
+    test_set.create_dataset('ct_test_{}'.format(i), data=image, compression='lzf')
 
 print('MR processing')
 print('-' * 100)
 for i in tqdm(range(len(mr_test_images))):
-    img = mr_test_images[i].get_data()
-    img = resize_image_with_crop_or_pad(img, [128, 128, 128], mode='symmetric').reshape(128,128,128,1)
-    test_set.create_dataset('mr_test_{}'.format(i), data=img, compression='lzf')
+    image = mr_test_images[i].get_data()
+    image = pad3d(image)
+    image = image_preprocess(image, new_size=256)
+    test_set.create_dataset('mr_test_{}'.format(i), data=image, compression='lzf')
 test_set.close()
 
 
