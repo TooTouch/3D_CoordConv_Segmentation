@@ -1,7 +1,7 @@
 from keras import callbacks as cb
 
 from loaddata import Load_Data
-from unet_build import Unet3d
+from models import unet_3d, unet_2d
 from keras.preprocessing.image import ImageDataGenerator
 
 import os
@@ -28,72 +28,51 @@ class MMWHS_Train:
 		print('Parameters')
 		pprint(params)
 		print('='*100)
-		self.id = len(os.listdir(self.log_dir))
+
 		self.name = params['NAME']
 		self.data = params['DATA']
-		self.save_name = self.name + '_' + str(self.id)
 		self.class_num =  params['CLASS_NUM']
+		self.image_size = params['IMAGE_SIZE']
 		self.cv_rate = params['CV_RATE']
 		self.cv_seed = params['CV_SEED']
 		self.epochs = params['EPOCHS']
 		self.batch_size = params['BATCH_SIZE']
 		self.optimizer = params['OPTIMIZER']
+		self.learning_rate = params['LEARNINGRATE']
+		self.dimension = params['DIMENSION']
+
+		self.id = len([name for name in os.listdir(self.log_dir) if self.name in name])
+		self.save_name = self.name + '_' + str(self.id) + '_' + str(self.image_size) + '_' + str(self.class_num)
 
 		# model 
 		self.model = None
-		self.input_shape = (1,128,128,128)
+		if self.dimension == '2D':
+			self.input_shape = ((1,) + (self.image_size ,)*2)
+		elif self.dimension == '3D':
+			self.input_shape = ((1,) + (self.image_size ,)*3)
 
 	def run(self):
-		# Load image
-		LD = Load_Data()
-		(ct_images, ct_labels), (mr_images, mr_labels) = LD.train_load()
+		# Create generator
+		LD = Load_Data(dataset=self.data, channel=self.class_num, dimension=self.dimension, size=self.image_size)
 
-		# Split
-		print('='*100)
-		print('CT')
-		(ct_train_images, ct_train_labels), (ct_valid_images, ct_valid_labels) = self.data_split(images=ct_images, labels=ct_labels)
-		print('=' * 100)
-		print('MR')
-		(mr_train_images, mr_train_labels), (mr_valid_images, mr_valid_labels) = self.data_split(images=mr_images, labels=mr_labels)
-		del(ct_images, ct_labels, mr_images, mr_labels)
+		# split train and validation
+		subjects = list(range(20)) # 20 is Number of subjects
+		choice = np.random.choice(subjects, size=int(20*self.cv_rate), replace=False)
+		train_subjects = list(map(lambda x: subjects.pop(x), sorted(choice, key=lambda x: -x)))
+		valid_subjects = subjects
 
-		# Size
-		ct_size = (ct_train_images.shape[0], ct_valid_images.shape[0])
-		mr_size = (mr_train_images.shape[0], mr_valid_images.shape[0])
-
-
-		# Data generator
-		# ct_train = self.data_generator(images=ct_train_images, labels=ct_train_labels, batch_size=self.batch_size)
-		# ct_val = self.data_generator(images=ct_valid_images, labels=ct_valid_labels, batch_size=self.batch_size)
-		# mr_train = self.data_generator(images=mr_train_images, labels=mr_train_labels, batch_size=self.batch_size)
-		# mr_val = self.data_generator(images=mr_valid_images, labels=mr_valid_labels, batch_size=self.batch_size)
-
-		# Check
-		print('='*100)
-		print('CT')
-		print('-'*100)
-		print('Train dataset shape: ',ct_train_images.shape)
-		print('Validation dataset shape: ',ct_valid_images.shape)
-		print('=' * 100)
-		print('MR')
-		print('-' * 100)
-		print('Train dataset shape: ', mr_train_images.shape)
-		print('Validation dataset shape: ', mr_valid_images.shape)
-
-		# # del
-		# del (ct_train_images, ct_train_labels, ct_valid_images, ct_valid_labels)
-		# del (mr_train_images, mr_train_labels, mr_valid_images, mr_valid_labels)
+		size = [len(train_subjects), len(valid_subjects)]
+		print('Number of train subjects: ',size[0])
+		print('Number of valid subjects: ',size[1])
+		train_gen = LD.data_gen(batch_size=self.batch_size, subjects=train_subjects)
+		valid_gen = LD.data_gen(batch_size=self.batch_size, subjects=valid_subjects)
 
 		# model
-		self.model_(input_shape=self.input_shape)
+		self.model_()
 		print(self.model.summary())
 
 		# train
-		# history, train_time = self.training(train=mr_train, val=mr_val, size=mr_size)
-		if self.data == 'MR':
-			history, train_time = self.training(X=mr_train_images, Y=mr_train_labels, ValX=mr_valid_images, ValY=mr_valid_labels)
-		elif self.data == 'CT':
-			history, train_time = self.training(X=ct_train_images, Y=ct_train_labels, ValX=ct_valid_images, ValY=ct_valid_labels)
+		history, train_time = self.training(train=train_gen, valid=valid_gen, size=size)
 
 		# report
 		self.report_json(history=history, time=train_time)
@@ -105,15 +84,17 @@ class MMWHS_Train:
 		:param labels: Labels
 		:return: (train_images, train_labels), (valid_images, valid_labels)
 		'''
-		img_cnt = images.shape[0]
-		train_cnt = int(np.ceil(img_cnt*self.cv_rate))
+		subjects = 20
+		train_cnt = int(subjects*self.cv_rate)
 		print('-'*100)
-		print('Number of train set: ',train_cnt)
-		print('Number of validation set: ',img_cnt - train_cnt)
-		idx = np.arange(img_cnt)
+		print('Number of train subjects: ',train_cnt)
+		print('Number of validation subjects: ',subjects - train_cnt)
 
-		np.random.seed(self.cv_seed)
-		np.random.shuffle(idx)
+		if self.dimension=='2D':
+			subjects *= self.image_size
+			train_cnt *= self.image_size
+
+		idx = np.arange(subjects)
 
 		train_idx = idx[:train_cnt]
 		valid_idx = idx[train_cnt:]
@@ -126,79 +107,58 @@ class MMWHS_Train:
 		return (train_images, train_labels), (valid_images, valid_labels)
 
 
-	def data_generator(self, images, labels, batch_size):
-		'''
-		:param images: [x1,x2,x3,...]
-		:param labels: [y1,y2,y3,...]
-		:param batch_size: Number of batch size
-		:return: if batch_size is 3, then yield [x1,x2,x3], [y1,y2,y3]
-		'''
-
-
-		datagen = ImageDataGenerator(
-		)
-		iterator = datagen.flow(
-			x=images,
-			y=labels,
-			batch_size=batch_size
-		)
-		for batch_x, batch_y in iterator:
-			yield batch_x, batch_y
-		#
-		# img_cnt = images.shape[0]
-		# steps_size = img_cnt // batch_size
-		#
-		# for i in range(steps_size):
-		# 	batch_x, batch_y = images[batch_size*i:batch_size*(i+1)], labels[batch_size*i:batch_size*(i+1)]
-		# 	yield batch_x, batch_y
-
-
-
-	def model_(self, input_shape):
+	def model_(self):
 		print('='*100)
 		print('Load Model')
 		print('Model name: ', self.save_name)
 		print('-'*100)
-		unet = Unet3d(input_shape=self.input_shape,
-						n_labels=self.class_num,
-						initial_learning_rate=0.0001,
-						n_base_filters=32,
-						include_label_wise_dice_coefficients=True,
-						batch_normalization=False,
-					  	deconvolution=True,
-						activation_name="softmax")
-		self.model = unet.build()
+		if self.name == 'UNET_3D':
+			model = unet_3d.Unet3d(input_shape=self.input_shape,
+							n_labels=self.class_num,
+							initial_learning_rate=self.learning_rate,
+							n_base_filters=64,
+							batch_normalization=False,
+							deconvolution=True)
+		elif self.name == 'UNET_2D':
+			model = unet_2d.Unet2d(input_shape=self.input_shape,
+								   n_labels=self.class_num,
+								   initial_learning_rate=self.learning_rate)
+		self.model = model.build()
 
 		print('Complete')
 		print('='*100)
 			
 
-	def training(self, X, Y, ValX, ValY, weights=None):
+	def training(self, train, valid, size, weights=None):
 		print('='*100)
 		print('Start training')
 		print('-'*100)
 
 		ckp = cb.ModelCheckpoint(self.model_dir + '/' + self.save_name + '.h5', monitor='val_loss', verbose=1, save_best_only=True, mode='auto', period=1)
 		es = cb.EarlyStopping(monitor='val_loss', min_delta=0, patience=10, verbose=1, mode='auto')
-		# rlp = cb.ReduceLROnPlateau(monitor='val_loss', factor=0.75, patience=5, verbose=1, mode='auto', min_delta=0.0001, cooldown=0, min_lr=0.000001)
+		rlp = cb.ReduceLROnPlateau(monitor='val_loss', factor=0.75, patience=5, verbose=1, mode='auto', min_delta=0.0001, cooldown=0, min_lr=0.000001)
+		tb = cb.TensorBoard(log_dir='../tensor_board', histogram_freq=0, batch_size=1, write_graph=True, write_grads=True, write_images=True,  update_freq='epoch')
 		start = time.time()
-		history = self.model.fit(x=X, y=Y,
-								batch_size=self.batch_size,
-								epochs=self.epochs,
-								verbose=2,
-								callbacks=[ckp],
-								validation_data=(ValX, ValY),
-								shuffle=True,
-								class_weight=weights)
-		# history = self.model.fit_generator(generator=train,
-		# 									steps_per_epoch=size[0]//self.batch_size,
-		# 									epochs=self.epochs,
-		# 									validation_data=val,
-		# 									validation_steps=size[1]//self.batch_size,
-		# 									class_weight=weights,
-		# 								    verbose=2,
-		# 									callbacks=[es,ckp]
-		# 				   )
+		# history = self.model.fit_generator(x=X, y=Y,
+		# 						batch_size=self.batch_size,
+		# 						epochs=self.epochs,
+		# 						verbose=1,
+		# 						callbacks=[ckp,tb],
+		# 						validation_data=(ValX, ValY),
+		# 						shuffle=True,
+		# 						class_weight=weights)
+		if self.dimension=='2D':
+			size[0] = size[0]*self.image_size
+			size[1] = size[1]*self.image_size
+
+		history = self.model.fit_generator(generator=train,
+											steps_per_epoch=size[0]//self.batch_size,
+											epochs=self.epochs,
+											validation_data=valid,
+											validation_steps=size[1]//self.batch_size,
+											class_weight=weights,
+										    verbose=1,
+											callbacks=[ckp,tb])
 		e = int(time.time() - start)
 		print('-'*100)
 		print('Complete')
@@ -216,6 +176,15 @@ class MMWHS_Train:
 		log['NAME'] = self.name
 		log['TIME'] = time
 		log['INPUT_SHAPE'] = self.model.input_shape
+		log['DATA'] = self.data
+		log['CLASS_NUM'] = self.class_num
+		log['IMAGE_SIZE'] = self.image_size
+		log['CV_RATE'] = self.cv_rate
+		log['CV_SEED'] = self.cv_seed
+		log['EPOCHS'] = self.epochs
+		log['BATCH_SIZE'] =self.batch_size
+		log['LEARNINGRATE'] = self.learning_rate
+		log['DIMENSION'] = self.dimension
 
 		m_compile['OPTIMIZER'] = str(type(self.model.optimizer))
 		m_compile['LOSS'] = str(self.model.loss)
@@ -225,24 +194,25 @@ class MMWHS_Train:
 		h = history.params
 		h['LOSS'] = history.history['loss']
 		h['DSC_TOTAL'] = history.history['dice_coefficient']
-		h['DSC0'] = history.history['label_0_DSC']
-		h['DSC1'] = history.history['label_1_DSC']
-		h['DSC2'] = history.history['label_2_DSC']
-		h['DSC3'] = history.history['label_3_DSC']
-		h['DSC4'] = history.history['label_4_DSC']
-		h['DSC5'] = history.history['label_5_DSC']
-		h['DSC6'] = history.history['label_6_DSC']
-		h['DSC7'] = history.history['label_7_DSC']
 		h['VAL_LOSS'] = history.history['val_loss']
 		h['VAL_DSC_TOTAL'] = history.history['val_dice_coefficient']
-		h['VAL_DSC0'] = history.history['val_label_0_DSC']
-		h['VAL_DSC1'] = history.history['val_label_1_DSC']
-		h['VAL_DSC2'] = history.history['val_label_2_DSC']
-		h['VAL_DSC3'] = history.history['val_label_3_DSC']
-		h['VAL_DSC4'] = history.history['val_label_4_DSC']
-		h['VAL_DSC5'] = history.history['val_label_5_DSC']
-		h['VAL_DSC6'] = history.history['val_label_6_DSC']
-		h['VAL_DSC7'] = history.history['val_label_7_DSC']
+		if self.class_num > 1:
+			h['DSC0'] = history.history['DSC_0']
+			h['DSC1'] = history.history['DSC_1']
+			h['DSC2'] = history.history['DSC_2']
+			h['DSC3'] = history.history['DSC_3']
+			h['DSC4'] = history.history['DSC_4']
+			h['DSC5'] = history.history['DSC_5']
+			h['DSC6'] = history.history['DSC_6']
+			h['DSC7'] = history.history['DSC_7']
+			h['VAL_DSC0'] = history.history['val_DSC_0']
+			h['VAL_DSC1'] = history.history['val_DSC_1']
+			h['VAL_DSC2'] = history.history['val_DSC_2']
+			h['VAL_DSC3'] = history.history['val_DSC_3']
+			h['VAL_DSC4'] = history.history['val_DSC_4']
+			h['VAL_DSC5'] = history.history['val_DSC_5']
+			h['VAL_DSC6'] = history.history['val_DSC_6']
+			h['VAL_DSC7'] = history.history['val_DSC_7']
 		log['HISTORY'] = h
 
 		print('='*100)

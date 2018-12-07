@@ -15,8 +15,7 @@ except ImportError:
 
 class Unet3d:
     def __init__(self, input_shape, pool_size=(2, 2, 2), n_labels=1, initial_learning_rate=0.00001, deconvolution=False,
-                      depth=4, n_base_filters=32, include_label_wise_dice_coefficients=False, metrics=dice_coefficient,
-                      batch_normalization=False, activation_name="sigmoid"):
+                      depth=4, n_base_filters=32, batch_normalization=False, pretrained_weights=None):
         self.input_shape = input_shape
         self.pool_size = pool_size
         self.n_labels = n_labels
@@ -24,11 +23,17 @@ class Unet3d:
         self.deconvolution = deconvolution,
         self.depth = depth
         self.n_base_filters = n_base_filters
-        self.include_label_wise_dice_coefficients = include_label_wise_dice_coefficients
-        self.metrics = metrics
+        self.metrics = dice_coefficient
         self.batch_normalization = batch_normalization
-        self.activation_name = activation_name
 
+        if self.n_labels == 1:
+            self.activation_name = 'sigmoid'
+            self.include_label_wise_dice_coefficients = False
+        else:
+            self.activation_name = 'softmax'
+            self.include_label_wise_dice_coefficients = True
+
+        self.pretrained_weights = pretrained_weights
 
     def build(self):
         """

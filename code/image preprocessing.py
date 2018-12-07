@@ -8,9 +8,24 @@ import scipy.ndimage
 
 from tqdm import tqdm
 import h5py
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--class_n', type=int, default=7, help='Number of classes')
+parser.add_argument('--size', type=int, help='Image size')
+args = parser.parse_args()
+
 
 # Number of class (include background)
-class_num = 7 + 1
+class_num = args.class_n
+# Image size
+size = args.size
+
+print('='*100)
+print('Start image preprocessing')
+print('-'*100)
+print('Number of class: ',class_num)
+print('Image size: ',size)
 
 # image directory path
 root = os.path.abspath(os.path.join(os.getcwd(),"../dataset/"))
@@ -55,9 +70,8 @@ mr_pad_labels = list()
 label_encoder = preprocessing.LabelEncoder()
 
 # hfd5
-train_set = h5py.File(save_dir + '/train_hf','w')
-test_set = h5py.File(save_dir + '/test_hf','w')
-
+train_set = h5py.File(save_dir + '/train_hf'+str(size) + '_' + str(class_num),'w')
+test_set = h5py.File(save_dir + '/test_hf'+str(size) + '_' + str(class_num),'w')
 
 # functions
 def pad3d(array):
@@ -77,7 +91,7 @@ def pad3d(array):
     return array_padding
 
 
-def image_preprocess(image, new_size, mask=False):
+def image_preprocess(image, new_size, mask=False, channel=1):
     assert np.sum(image.shape == image.shape[0]) != 3
 
     ratio = new_size / image.shape[0]
@@ -85,12 +99,14 @@ def image_preprocess(image, new_size, mask=False):
     image = scipy.ndimage.zoom(image, zoom=ratio, order=0)
 
     if mask:
-        channel = 7 + 1  # background
-        image = image.reshape(-1)
-        image = label_encoder.fit_transform(image)
-        image = to_categorical(image, class_num)
-    else:
-        channel = 1
+        if channel > 1:
+            channel += 1 # background
+            image = image.reshape(-1)
+            image = label_encoder.fit_transform(image)
+            image = to_categorical(image, channel)
+        else:
+            image[image>0] = 1
+
     # reshape to raw shape
     image = image.reshape((new_size,) * 3 + (channel,))
 
@@ -162,14 +178,14 @@ print('-'*100)
 for i in tqdm(range(len(ct_images))):
     image = ct_images[i].get_data()
     image = pad3d(image)
-    image = image_preprocess(image, new_size=256)
+    image = image_preprocess(image, new_size=size)
     train_set.create_dataset('ct_image_{}'.format(i), data=image, compression='lzf')
     del(image)
 
 for i in tqdm(range(len(ct_labels))):
     image = ct_labels[i].get_data()
     image = pad3d(image)
-    image = image_preprocess(image, new_size=256, mask=True)
+    image = image_preprocess(image, new_size=size, mask=True, channel=class_num)
     train_set.create_dataset('ct_label_{}'.format(i), data=image, compression='lzf')
     del(image)
 
@@ -178,14 +194,14 @@ print('-' * 100)
 for i in tqdm(range(len(mr_images))):
     image = mr_images[i].get_data()
     image = pad3d(image)
-    image = image_preprocess(image, new_size=256)
+    image = image_preprocess(image, new_size=size)
     train_set.create_dataset('mr_image_{}'.format(i), data=image, compression='lzf')
     del(image)
 
 for i in tqdm(range(len(mr_labels))):
     image = mr_labels[i].get_data()
     image = pad3d(image)
-    image = image_preprocess(image, new_size=256, mask=True)
+    image = image_preprocess(image, new_size=size, mask=True, channel=class_num)
     train_set.create_dataset('mr_label_{}'.format(i), data=image, compression='lzf')
     del(image)
 train_set.close()
@@ -200,7 +216,7 @@ print('-'*100)
 for i in tqdm(range(len(ct_test_images))):
     image = ct_test_images[i].get_data()
     image = pad3d(image)
-    image = image_preprocess(image, new_size=256)
+    image = image_preprocess(image, new_size=size)
     test_set.create_dataset('ct_test_{}'.format(i), data=image, compression='lzf')
 
 print('MR processing')
@@ -208,7 +224,7 @@ print('-' * 100)
 for i in tqdm(range(len(mr_test_images))):
     image = mr_test_images[i].get_data()
     image = pad3d(image)
-    image = image_preprocess(image, new_size=256)
+    image = image_preprocess(image, new_size=size)
     test_set.create_dataset('mr_test_{}'.format(i), data=image, compression='lzf')
 test_set.close()
 

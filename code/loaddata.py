@@ -3,16 +3,22 @@ import os
 import numpy as np
 
 class Load_Data:
-    def __init__(self):
+    def __init__(self, dataset, channel, dimension, size):
+        '''
+        Initial values
+        :param dataset: CT or MR
+        :param channel: Number of class
+        :param dimension: 2D or 3D
+        '''
         self.root = os.path.abspath(os.path.join(os.getcwd(),'../dataset/'))
 
-        # self.ct_train_dir = os.path.join(self.root, 'ct_train_test(processed)/ct_train')
-        # self.ct_test_dir = os.path.join(self.root, 'ct_train_test(processed)/ct_test')
-        # self.mr_train_dir = os.path.join(self.root, 'mr_train_test(processed)/mr_train')
-        # self.mr_test_dir = os.path.join(self.root, 'mr_train_test(processed)/mr_test')
+        self.size = size
+        self.dataset = dataset
+        self.channel = channel
+        self.dimension = dimension
 
-        self.train_dir = os.path.join(self.root, 'h5py/train_hf')
-        self.test_dir = os.path.join(self.root, 'h5py.test_hf')
+        self.train_dir = os.path.join(self.root, 'h5py/train_hf' + str(self.size) + '_' + str(self.channel))
+        self.test_dir = os.path.join(self.root, 'h5py.test_hf' + str(self.size))
 
     def train_load(self):
         print('='*100)
@@ -20,26 +26,22 @@ class Load_Data:
         print('Train data directory: ',self.train_dir)
         train_hf = h5py.File(self.train_dir, 'r')
 
-        ct_images = np.zeros((20, 128, 128, 128, 1))
-        ct_labels = np.zeros((20, 128, 128, 128, 8))
-        mr_images = np.zeros((20, 128, 128, 128, 1))
-        mr_labels = np.zeros((20, 128, 128, 128, 8))
-
+        images = np.zeros((20, self.size, self.size, self.size, 1))
+        labels = np.zeros((20, self.size, self.size, self.size, self.channel))
         for i in range(20):
-            ct_images[i,:,:,:,:] = np.array(train_hf['ct_image_{}'.format(i)])
-            ct_labels[i,:,:,:,:] = np.array(train_hf['ct_label_{}'.format(i)])
-            mr_images[i,:,:,:,:] = np.array(train_hf['mr_image_{}'.format(i)])
-            mr_labels[i,:,:,:,:] = np.array(train_hf['mr_label_{}'.format(i)])
-
+            images[i] = np.array(train_hf['{}_image_{}'.format(self.dataset.lower(), i)])
+            labels[i] = np.array(train_hf['{}_label_{}'.format(self.dataset.lower(), i)])
         train_hf.close()
 
-        ct_images = np.moveaxis(ct_images,-1,1)
-        ct_labels = np.moveaxis(ct_labels,-1,1)
-        mr_images = np.moveaxis(mr_images,-1,1)
-        mr_labels = np.moveaxis(mr_labels,-1,1)
+        if self.dimension == '2D':
+            images = images.reshape(-1,self.size, self.size, 1)
+            labels = labels.reshape(-1,self.size, self.size, self.channel)
+
+        images = np.moveaxis(images,-1,1)
+        labels = np.moveaxis(labels,-1,1)
 
         print('Complete')
-        return (ct_images, ct_labels), (mr_images, mr_labels)
+        return (images, labels)
 
 
     def test_load(self):
@@ -48,11 +50,49 @@ class Load_Data:
         print('Test data directory: ',self.test_dir)
         test_hf = h5py.File(self.test_dir, 'r')
 
-        ct_images = np.array(test_hf['ct_test_images'].get_data())
-        mr_images = np.array(test_hf['mr_test_images'].get_data())
+        images = np.zeros((40, self.size, self.size, self.size, 1))
+        labels = np.zeros((40, self.size, self.size, self.size, self.channel))
 
+        for i in range(40):
+            images[i] = np.array(test_hf['{}_test_image_{}'.format(self.dataset.lower(), i)])
+            labels[i] = np.array(test_hf['{}_test_label_{}'.format(self.dataset.lower(), i)])
         test_hf.close()
+
+        if self.dimension == '2D':
+            images = images.reshape(-1, self.size, self.size, 1)
+            labels = labels.reshape(-1, self.size, self.size, self.channel)
+
+        images = np.moveaxis(images, -1, 1)
+        labels = np.moveaxis(labels, -1, 1)
+
         print('Complete')
-        return ct_images, mr_images
+
+        return (images, labels)
 
 
+    def data_gen(self, batch_size, subjects):
+        """
+        Generator to yield inputs and their labels in batches.
+        """
+        d = 2 if self.dimension=='2D' else 3
+        train_hf = h5py.File(self.train_dir, 'r')
+
+        while True:
+            batch_imgs = np.array([]).reshape((0,) + (1,) + (self.size,) * d )
+            batch_labels = np.array([]).reshape((0,) + (self.channel,) + (self.size,) * d)
+            for i in range(batch_size):
+                idx = np.random.choice(subjects)
+                img = np.array(train_hf['{}_image_{}'.format(self.dataset.lower(),idx)]).reshape((-1,) + (self.size,) * d + (1,))
+                label = np.array(train_hf['{}_label_{}'.format(self.dataset.lower(),idx)]).reshape((-1,) + (self.size,) * d + (self.channel,))
+
+                img /= 255.
+
+                img = np.moveaxis(img, -1, 1)
+                label = np.moveaxis(label, -1, 1)
+
+                batch_imgs = np.vstack([batch_imgs, img])
+                batch_labels = np.vstack([batch_labels, label])
+
+                yield batch_imgs, batch_labels
+                # for i in range(batch_size):
+                #     yield batch_imgs[batch_size * i:batch_size * (i + 1)], batch_labels[batch_size * i:batch_size * (i + 1)]
