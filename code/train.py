@@ -74,9 +74,10 @@ class MMWHS_Train:
 		# train
 		history, train_time = self.training(train=train_gen, valid=valid_gen, size=size)
 
+
+
 		# report
 		self.report_json(history=history, time=train_time)
-
 
 	def data_split(self, images, labels):
 		'''

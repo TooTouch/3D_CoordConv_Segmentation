@@ -3,6 +3,7 @@ from keras import backend as K
 from keras.engine import Input, Model
 from keras.layers import Conv3D, MaxPooling3D, UpSampling3D, Activation, BatchNormalization, PReLU, Deconvolution3D
 from keras.optimizers import Adam
+from keras.models import load_model
 
 from metrics import dice_coefficient_loss, get_label_dice_coefficient_function, dice_coefficient, weighted_dice_coefficient_loss
 
@@ -11,7 +12,7 @@ K.set_image_data_format("channels_first")
 try:
     from keras.engine import merge
 except ImportError:
-    from keras.layers.merge import concatenate
+    from keras.layers.merge import concatenate, loadmoders
 
 class Unet3d:
     def __init__(self, input_shape, pool_size=(2, 2, 2), n_labels=1, initial_learning_rate=0.00001, deconvolution=False,
@@ -84,6 +85,9 @@ class Unet3d:
         act = Activation(self.activation_name)(final_convolution)
         model = Model(inputs=inputs, outputs=act)
 
+        if (self.pretrained_weights):
+            model.load_weights(self.pretrained_weights)
+
         if not isinstance(self.metrics, list):
             self.metrics = [self.metrics]
 
@@ -95,6 +99,7 @@ class Unet3d:
                 self.metrics = label_wise_dice_metrics
 
         model.compile(optimizer=Adam(lr=self.initial_learning_rate), loss=weighted_dice_coefficient_loss, metrics=self.metrics)
+
         return model
 
 
@@ -146,3 +151,14 @@ class Unet3d:
                                    strides=strides)
         else:
             return UpSampling3D(size=pool_size)
+
+    def get_weights_without_softargmax(n = fname):
+        model = load_model(Subjexts), custom_objects={'spatial_softArgmax': spatial_softArgmax})
+
+        model.summary()
+        model.layers.pop()  # reshape layer
+        model.layers.pop()  # spatial softargmax
+
+        model.summary()
+
+        model.save("no_softargmax_" + str(fname))
