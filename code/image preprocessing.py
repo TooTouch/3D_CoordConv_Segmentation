@@ -12,7 +12,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--class_n', type=int, default=7, help='Number of classes')
-parser.add_argument('--size', type=int, help='Image size')
+parser.add_argument('--size', type=int, default=256, help='Image size')
 args = parser.parse_args()
 
 
@@ -75,8 +75,14 @@ test_set = h5py.File(save_dir + '/test_hf'+str(size) + '_' + str(class_num),'w')
 
 # functions
 def pad3d(array):
-    height = array.shape[0]
-    depth = array.shape[2]
+    x0 = array.shape[0]
+    x2 = array.shape[2]
+    if x0 > x2:
+        height = x0
+        depth = x2
+    elif x2 > x0:
+        height = x2
+        depth = x0
 
     if (height - depth) % 2:
         pad_front = int((height + 1 - depth) / 2)
@@ -84,7 +90,11 @@ def pad3d(array):
     else:
         pad_front = pad_back = int((height - depth) / 2)
 
-    npad = ((0, 0), (0, 0), (pad_front, pad_back))
+    if x0 > x2:
+        npad = ((0, 0), (0, 0), (pad_front, pad_back))
+    elif x2 > x0:
+        npad = ((pad_front, pad_back), (0, 0), (0, 0))
+
     array_padding = np.pad(array, npad, 'constant', constant_values=(0))
     array_padding[array_padding < 0] = 0
 
@@ -112,6 +122,14 @@ def image_preprocess(image, new_size, mask=False, channel=1):
 
     return image
 
+def axis_transform(image):
+    idx = 0
+    if np.sum(image[5,:,int(image.shape[-1]/2)]) == 0:
+        image = image.T
+        image = np.flip(image,axis=0)
+        idx += 1
+    return image, idx
+
 
 # Load train images
 for ct_l in ct_list:
@@ -123,8 +141,6 @@ for ct_l in ct_list:
         file_path = os.path.join(ct_set, ct_l)
         fn = os.listdir(file_path)
         ct_labels.append(nib.load(file_path + '/' + fn[0]))
-
-
 for mr_l in mr_list:
     if 'image' in mr_l:
         file_path = os.path.join(mr_set, mr_l)
@@ -142,8 +158,6 @@ for fn in ct_test_list:
     img_fn = os.listdir(img_dir)[0]
     im = nib.load(os.path.join(img_dir, img_fn))
     ct_test_images.append(im)
-
-
 for fn in mr_test_list:
     img_dir = os.path.join(mr_test_dir, fn)
     img_fn = os.listdir(img_dir)[0]
@@ -153,7 +167,6 @@ for fn in mr_test_list:
 # Fix label value
 m = mr_labels[9].get_data()
 m[m==421] = 420
-
 
 # Image shape
 print('='*100)
@@ -173,15 +186,12 @@ print('Training')
 print('-'*100)
 print('CT processing')
 print('-'*100)
-
-
 for i in tqdm(range(len(ct_images))):
     image = ct_images[i].get_data()
     image = pad3d(image)
     image = image_preprocess(image, new_size=size)
     train_set.create_dataset('ct_image_{}'.format(i), data=image, compression='lzf')
     del(image)
-
 for i in tqdm(range(len(ct_labels))):
     image = ct_labels[i].get_data()
     image = pad3d(image)
@@ -191,15 +201,19 @@ for i in tqdm(range(len(ct_labels))):
 
 print('MR processing')
 print('-' * 100)
+transform_idx = list()
 for i in tqdm(range(len(mr_images))):
     image = mr_images[i].get_data()
+    image, idx = axis_transform(image)
     image = pad3d(image)
     image = image_preprocess(image, new_size=size)
     train_set.create_dataset('mr_image_{}'.format(i), data=image, compression='lzf')
+    transform_idx.append(idx)
     del(image)
-
 for i in tqdm(range(len(mr_labels))):
     image = mr_labels[i].get_data()
+    if transform_idx[i]:
+        image, _ = axis_transform(image)
     image = pad3d(image)
     image = image_preprocess(image, new_size=size, mask=True, channel=class_num)
     train_set.create_dataset('mr_label_{}'.format(i), data=image, compression='lzf')
