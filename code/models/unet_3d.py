@@ -1,7 +1,9 @@
+import os
 import numpy as np
+
 from keras import backend as K
 from keras.engine import Input, Model
-from keras.layers import Conv3D, MaxPooling3D, UpSampling3D, Activation, BatchNormalization, PReLU, Deconvolution3D
+from keras import layers as KL
 from keras.optimizers import Adam
 from keras.models import load_model
 
@@ -12,12 +14,32 @@ K.set_image_data_format("channels_first")
 try:
     from keras.engine import merge
 except ImportError:
-    from keras.layers.merge import concatenate, loadmoders
+    from keras.layers.merge import concatenate
 
 class Unet3d:
     def __init__(self, input_shape, pool_size=(2, 2, 2), n_labels=1, initial_learning_rate=0.00001, deconvolution=False,
-                      depth=4, n_base_filters=32, batch_normalization=False, pretrained_weights=None):
+                      depth=4, n_base_filters=32, batch_normalization=False, pretrained_weights=None, pretrained_model='None'):
+        '''
+
+        :param input_shape: Shape of the input data (x_size, y_size, z_size, n_chanels). The x, y, and z sizes must be
+                            divisible by the pool size to the power of the depth of the UNet, that is pool_size^depth.
+        :param pool_size: Pool size for the max pooling operations.
+        :param n_labels: Number of binary labels that the model is learning.
+        :param initial_learning_rate: Initial learning rate for the model. This will be decayed during training.
+        :param deconvolution: If set to True, will use transpose convolution(deconvolution) instead of up-sampling. This
+                                increases the amount memory required during training.
+        :param depth: indicates the depth of the U-shape for the model. The greater the depth, the more max pooling
+                        layers will be added to the model. Lowering the depth may reduce the amount of memory required for training.
+        :param n_base_filters: The number of filters that the first layer in the convolution network will have. Following
+                layers will contain a multiple of this number. Lowering this number will likely reduce the amount of memory required
+                to train the model.
+        :param batch_normalization: 
+        :param pretrained_weights:
+        :param pretrained_model:
+        '''
+
         self.input_shape = input_shape
+        print(self.input_shape)
         self.pool_size = pool_size
         self.n_labels = n_labels
         self.initial_learning_rate = initial_learning_rate
@@ -26,7 +48,7 @@ class Unet3d:
         self.n_base_filters = n_base_filters
         self.metrics = dice_coefficient
         self.batch_normalization = batch_normalization
-
+        self.model_dir = os.path.abspath(os.path.join(os.getcwd(),'../model/'+pretrained_model+'.h5'))
         if self.n_labels == 1:
             self.activation_name = 'sigmoid'
             self.include_label_wise_dice_coefficients = False
@@ -37,25 +59,6 @@ class Unet3d:
         self.pretrained_weights = pretrained_weights
 
     def build(self):
-        """
-        Builds the 3D UNet Keras model.f
-        :param metrics: List metrics to be calculated during model training (default is dice coefficient).
-        :param include_label_wise_dice_coefficients: If True and n_labels is greater than 1, model will report the dice
-        coefficient for each label as metric.
-        :param n_base_filters: The number of filters that the first layer in the convolution network will have. Following
-        layers will contain a multiple of this number. Lowering this number will likely reduce the amount of memory required
-        to train the model.
-        :param depth: indicates the depth of the U-shape for the model. The greater the depth, the more max pooling
-        layers will be added to the model. Lowering the depth may reduce the amount of memory required for training.
-        :param input_shape: Shape of the input data (x_size, y_size, z_size, n_chanels). The x, y, and z sizes must be
-        divisible by the pool size to the power of the depth of the UNet, that is pool_size^depth.
-        :param pool_size: Pool size for the max pooling operations.
-        :param n_labels: Number of binary labels that the model is learning.
-        :param initial_learning_rate: Initial learning rate for the model. This will be decayed during training.
-        :param deconvolution: If set to True, will use transpose convolution(deconvolution) instead of up-sampling. This
-        increases the amount memory required during training.
-        :return: Untrained 3D UNet Model
-        """
         inputs = Input(self.input_shape)
         current_layer = inputs
         levels = list()
@@ -65,7 +68,7 @@ class Unet3d:
             layer1 = self.create_convolution_block(input_layer=current_layer, n_filters=self.n_base_filters*(2**layer_depth))
             layer2 = self.create_convolution_block(input_layer=layer1, n_filters=self.n_base_filters*(2**layer_depth))
             if layer_depth < self.depth - 1:
-                current_layer = MaxPooling3D(pool_size=self.pool_size, data_format = 'channels_first')(layer2)
+                current_layer = KL.MaxPooling3D(pool_size=self.pool_size, data_format = 'channels_first')(layer2)
                 levels.append([layer1, layer2, current_layer])
             else:
                 current_layer = layer2
@@ -81,8 +84,8 @@ class Unet3d:
             current_layer = self.create_convolution_block(n_filters=self.n_base_filters*(2**layer_depth),
                                                      input_layer=current_layer)
 
-        final_convolution = Conv3D(self.n_labels, (1, 1, 1))(current_layer)
-        act = Activation(self.activation_name)(final_convolution)
+        final_convolution = KL.Conv3D(self.n_labels, (1, 1, 1))(current_layer)
+        act = KL.Activation(self.activation_name)(final_convolution)
         model = Model(inputs=inputs, outputs=act)
 
         if (self.pretrained_weights):
@@ -115,9 +118,9 @@ class Unet3d:
         :param padding:
         :return:
         """
-        layer = Conv3D(n_filters, kernel, padding=padding, strides=strides)(input_layer)
+        layer = KL.Conv3D(n_filters, kernel, padding=padding, strides=strides)(input_layer)
         if self.batch_normalization:
-            layer = BatchNormalization(axis=1)(layer)
+            layer = KL.BatchNormalization(axis=1)(layer)
         elif instance_normalization:
             try:
                 from keras_contrib.layers.normalization import InstanceNormalization
@@ -126,7 +129,7 @@ class Unet3d:
                                   "\nTry: pip install git+https://www.github.com/farizrahman4u/keras-contrib.git")
             layer = InstanceNormalization(axis=1)(layer)
         if activation is None:
-            return Activation('relu')(layer)
+            return KL.Activation('relu')(layer)
         else:
             return activation()(layer)
 
@@ -147,18 +150,32 @@ class Unet3d:
 
     def get_up_convolution(self, n_filters, pool_size, kernel_size=(2, 2, 2), strides=(2, 2, 2)):
         if self.deconvolution:
-            return Deconvolution3D(filters=n_filters, kernel_size=kernel_size,
+            return KL.Deconvolution3D(filters=n_filters, kernel_size=kernel_size,
                                    strides=strides)
         else:
-            return UpSampling3D(size=pool_size)
+            return KL.UpSampling3D(size=pool_size)
 
-    def get_weights_without_softargmax(n = fname):
-        model = load_model(Subjexts), custom_objects={'spatial_softArgmax': spatial_softArgmax})
+    def finetune_model(self):
+        model = load_model(self.model_dir,
+                                  custom_objects={'weighted_dice_coefficient_loss': weighted_dice_coefficient_loss,
+                                                  'dice_coefficient': dice_coefficient})
 
-        model.summary()
-        model.layers.pop()  # reshape layer
-        model.layers.pop()  # spatial softargmax
+        x = KL.Conv3D(filters=32, kernel_size=(3, 3, 3), padding='same', activation='relu', name='fine_tune_conv3d_0')(model.layers[-3].output)
+        x = KL.Conv3D(filters=16, kernel_size=(3, 3, 3), padding='same', activation='relu', name='fine_tune_conv3d_1')(x)
+        output = KL.Conv3D(filters=8, kernel_size=(3, 3, 3), padding='same', activation='softmax',name='fine_tune_conv3d_2')(x)
+        model = Model(inputs=model.input, outputs=output)
 
-        model.summary()
+        if not isinstance(self.metrics, list):
+            self.metrics = [self.metrics]
 
-        model.save("no_softargmax_" + str(fname))
+        if self.include_label_wise_dice_coefficients and self.n_labels > 1:
+            label_wise_dice_metrics = [get_label_dice_coefficient_function(index) for index in range(self.n_labels)]
+            if self.metrics:
+                self.metrics = self.metrics + label_wise_dice_metrics
+            else:
+                self.metrics = label_wise_dice_metrics
+
+        model.compile(optimizer=Adam(lr=self.initial_learning_rate), loss=weighted_dice_coefficient_loss,
+                      metrics=self.metrics)
+
+        return model

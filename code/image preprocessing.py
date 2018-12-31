@@ -70,8 +70,8 @@ mr_pad_labels = list()
 label_encoder = preprocessing.LabelEncoder()
 
 # hfd5
-train_set = h5py.File(save_dir + '/train_hf'+str(size) + '_' + str(class_num),'w')
-test_set = h5py.File(save_dir + '/test_hf'+str(size) + '_' + str(class_num),'w')
+train_set = h5py.File(save_dir + '/train_hf'+str(size) + '_' + str(class_num+1),'w')
+test_set = h5py.File(save_dir + '/test_hf'+str(size),'w')
 
 # functions
 def pad3d(array):
@@ -197,7 +197,17 @@ for i in tqdm(range(len(ct_labels))):
     image = pad3d(image)
     image = image_preprocess(image, new_size=size, mask=True, channel=class_num)
     train_set.create_dataset('ct_label_{}'.format(i), data=image, compression='lzf')
-    del(image)
+
+    s_image = np.argmax(image, axis=-1)
+    s_image = s_image.reshape(s_image.shape + (1,))
+
+    c = np.zeros((7, size, size, size, 1))
+    for j in range(1, 8):
+        mask = s_image == j
+        c[j - 1, :, :, :, :] = mask.astype(int)
+    train_set.create_dataset('ct_label_split_{}'.format(i), data=c, compression='lzf')
+
+    del image, c
 
 print('MR processing')
 print('-' * 100)
@@ -217,7 +227,16 @@ for i in tqdm(range(len(mr_labels))):
     image = pad3d(image)
     image = image_preprocess(image, new_size=size, mask=True, channel=class_num)
     train_set.create_dataset('mr_label_{}'.format(i), data=image, compression='lzf')
-    del(image)
+
+    s_image = np.argmax(image, axis=-1)
+    s_image = s_image.reshape(s_image.shape + (1,))
+    c = np.zeros((7, size, size, size, 1))
+    for j in range(1, 8):
+        mask = s_image == j
+        c[j - 1, :, :, :, :] = mask.astype(int)
+    train_set.create_dataset('mr_label_split_{}'.format(i), data=c, compression='lzf')
+
+    del image, c
 train_set.close()
 
 
@@ -240,6 +259,7 @@ for i in tqdm(range(len(mr_test_images))):
     image = pad3d(image)
     image = image_preprocess(image, new_size=size)
     test_set.create_dataset('mr_test_{}'.format(i), data=image, compression='lzf')
+
 test_set.close()
 
 

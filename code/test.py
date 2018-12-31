@@ -1,106 +1,105 @@
-import pandas as pd 
-import numpy as np 
+from loaddata import Load_Data
+from metrics import weighted_dice_coefficient_loss, dice_coefficient, get_label_dice_coefficient_function
+
 import os
-import h5py
-from keras.models import load_model
-from keras.preprocessing.image import ImageDataGenerator
-
+import numpy as np
+import nibabel as nib
 import argparse
+import time
+import h5py
+from pprint import pprint
+from tqdm import tqdm
 
+from keras import models
 
-class State_Test:
-	def __init__(self, name):
-		self.name = name
-		self.root_dir = os.path.abspath(os.path.join(os.getcwd(),'../../'))
+from collections import OrderedDict
+import json
+
+class MMWHS_Test:
+	def __init__(self, args):
+		self.model_name = args.model_name
+		self.dataset = args.dataset
+		self.input_channel = args.input_channel
+		self.image_size = args.image_size
+		self.dimension = args.dimension
+
+		self.root_dir = os.path.abspath(os.path.join(os.getcwd(), '..'))
 		self.model_dir = os.path.join(self.root_dir, 'model')
-		self.test_idx = os.listdir(os.path.join(self.root_dir,'dataset/test'))
-		self.test_dir = os.path.join(self.root_dir, 'dataset/h5py/test')
-		self.test_dir += str((224, 224, 3))
-		self.submit_dir = os.path.join(self.root_dir, 'result')
-		self.c_class = os.listdir(os.path.join(self.root_dir, 'dataset/train'))
-		self.hf = h5py.File(self.test_dir,'r')
+		self.test_dir = os.path.join(self.root_dir, 'dataset/h5py/test_hf' + str(self.image_size))
+		self.save_dir = os.path.join(self.root_dir, 'predict_image')
+
 		self.model = None
-	
+		self.test_image_num = 40
+
+		self.test_hf = h5py.File(self.test_dir, 'r')
+		print('='*100)
+		print('test_hf: ',list(self.test_hf.keys()))
+		print('=' * 100)
+
 	def run(self):
+		# Load model
 		self.model_()
-
-		for i in range(10):
-			# load images
-			test_gen, batch_size = self.load_data(i)
-			# predict
-			prob = self.predict_(test_gen, batch_size=batch_size)
-			# save to submit file 
-			prob_df = pd.DataFrame(prob, columns=self.c_class)
-			submit = pd.concat([pd.DataFrame({'img':self.test_idx[:batch_size]}), prob_df], axis=1)
-			submit.to_csv(self.submit_dir + '/submit.' + str(i) + '.csv', index=False)
-			# drop 
-			self.test_idx = self.test_idx[batch_size:]
-			del(test_gen); del(prob); del(prob_df); del(submit)
-
-		self.submit_concat()
-		self.hf.close()
-
-
-	def load_data(self, i):
-		print('='*50)
-		print('Load test {} iamges'.format(str(i)))
-		test_imgs = self.hf['test' + str(i)]
-		batch_size = test_imgs.shape[0]
-		print('Complete')
-		print('='*50)
-		test_gen = self.image_gen(images=test_imgs, labels=None, batch_size=1, seed=1223)
-		del(test_imgs)
-		return test_gen, batch_size
+		print(self.model.summary())
+		# predict
+		print('=' * 100)
+		print('Start to predict label')
+		for i in range(self.test_image_num):
+			# Create generator
+			test_image = self.load_data(i)
+			prob = self.model.predict(test_image, verbose=1)
+			prob = np.moveaxis(prob, 1, -1)[0]
+			pred = np.round(prob).astype(int)
+			print('Predict image shape: ',pred.shape)
+			print(np.sum(pred))
+			print('Complete')
+			# Save images
+			self.save_predict_value(pred, i)
+		self.test_hf.close()
 
 
-	def image_gen(self, images, labels, batch_size, seed=None, shuffle=False):
-		datagen = ImageDataGenerator(rescale = 1./255)
-		iterator = datagen.flow(
-			x = images,
-			y = labels,
-			batch_size = batch_size,
-			seed=seed,
-			shuffle=shuffle
-		)
-		for batch_x in iterator:
-			yield batch_x
+	def load_data(self, idx):
+		"""
+        Generator to yield inputs in batches.
+        """
+		d = 2 if self.dimension == '2D' else 3
+
+		img = np.array(self.test_hf['{}_test_{}'.format(self.dataset.lower(), idx)]).reshape((-1,) + (self.image_size,) * d + (1,))
+		img = np.moveaxis(img, -1, 1)
+		return img
+
 
 	def model_(self):
-		print('='*50)
+		print('='*100)
 		print('Load model')
-		self.model = load_model(self.model_dir + '/' + self.name + '.h5')
-		print('Complete')
-		print('='*50)
+		custom_objects = {'weighted_dice_coefficient_loss': weighted_dice_coefficient_loss,'dice_coefficient': dice_coefficient}
 
-	def predict_(self, x_test, batch_size):
-		print('='*50)
-		print('Start to predict label')
-		prob = self.model.predict_generator(x_test, verbose=1, steps=batch_size)
-		print('Complete')
-		print('='*50)
-		return prob
+		if self.input_channel > 1:
+			for index in range(self.input_channel):
+				custom_objects['DSC_{}'.format(index)] = get_label_dice_coefficient_function(index)
 
-	def submit_concat(self):
-		print('Concatenate submit batch files')
-		submit_1_10 = os.listdir(self.submit_dir)
-		concat_dir = os.listdir(self.submit_dir + '/concat_file')
-		ID = str(len(concat_dir) + 1)
-		submit_1_10 = [i for i in submit_1_10 if 'submit' in i]
-		print(submit_1_10)
-		submit_df = list()
-		for df in submit_1_10:
-			submit_df.append(pd.read_csv(self.submit_dir + '/' + df))
-		submit = pd.concat(submit_df, axis=0)
+		self.model = models.load_model(self.model_dir + '/' + self.model_name + '.h5', custom_objects=custom_objects)
 
-		submit.to_csv(self.submit_dir + '/concat_file/' + ID + '.submit.csv', index=False)
 		print('Complete')
+
+
+	def save_predict_value(self, pred, idx):
+		print('='*100)
+		print('Save predict images')
+		pred_image = nib.Nifti1Image(pred, affine=np.eye(4))
+		nib.save(pred_image, self.save_dir + '/{}_test_pred_{}.nii'.format(self.dataset, idx))
+		print('Complete')
+
 
 if __name__=='__main__':
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--name', type=str, help='Model name')
+	parser.add_argument('--dataset', type=str, help='CT or MR')
+	parser.add_argument('--model_name', type=str, help='Model name')
+	parser.add_argument('--input_channel', type=int, default=8, help='Number of class')
+	parser.add_argument('--image_size', type=int, default=128, help='Input size')
+	parser.add_argument('--dimension', type=str, default='3D', help='2D or 3D')
 	args = parser.parse_args()
 
-	t = State_Test(args.name)
+	t = MMWHS_Test(args)
 	t.run()
 
 

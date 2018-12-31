@@ -3,6 +3,7 @@
 	"DATA": "CT",
 	"CLASS_NUM": 8,
 	"IMAGE_SIZE": 128,
+	"INPUT_CHANNEL": 1,
 	"DIMENSION": "3D",
 	"CV_RATE": 0.8,
 	"CV_SEED": 223,

@@ -2,7 +2,6 @@ from keras import callbacks as cb
 
 from loaddata import Load_Data
 from models import unet_3d, unet_2d
-from keras.preprocessing.image import ImageDataGenerator
 
 import os
 import numpy as np
@@ -32,6 +31,7 @@ class MMWHS_Train:
 		self.name = params['NAME']
 		self.data = params['DATA']
 		self.class_num =  params['CLASS_NUM']
+		self.input_channel = params['INPUT_CHANNEL']
 		self.image_size = params['IMAGE_SIZE']
 		self.cv_rate = params['CV_RATE']
 		self.cv_seed = params['CV_SEED']
@@ -40,6 +40,10 @@ class MMWHS_Train:
 		self.optimizer = params['OPTIMIZER']
 		self.learning_rate = params['LEARNINGRATE']
 		self.dimension = params['DIMENSION']
+		if 'PRETRAINED_MODEL' in params.keys():
+			self.pretrained_model = params['PRETRAINED_MODEL']
+		else:
+			self.pretrained_model = 'None'
 
 		self.id = len([name for name in os.listdir(self.log_dir) if self.name in name])
 		self.save_name = self.name + '_' + str(self.id) + '_' + str(self.image_size) + '_' + str(self.class_num)
@@ -53,7 +57,7 @@ class MMWHS_Train:
 
 	def run(self):
 		# Create generator
-		LD = Load_Data(dataset=self.data, channel=self.class_num, dimension=self.dimension, size=self.image_size)
+		LD = Load_Data(dataset=self.data, class_num=self.class_num, channel=self.input_channel, dimension=self.dimension, size=self.image_size)
 
 		# split train and validation
 		subjects = list(range(20)) # 20 is Number of subjects
@@ -73,8 +77,6 @@ class MMWHS_Train:
 
 		# train
 		history, train_time = self.training(train=train_gen, valid=valid_gen, size=size)
-
-
 
 		# report
 		self.report_json(history=history, time=train_time)
@@ -113,18 +115,23 @@ class MMWHS_Train:
 		print('Load Model')
 		print('Model name: ', self.save_name)
 		print('-'*100)
-		if self.name == 'UNET_3D':
+		if 'UNET_3D' in self.name:
 			model = unet_3d.Unet3d(input_shape=self.input_shape,
-							n_labels=self.class_num,
+							n_labels=self.input_channel,
 							initial_learning_rate=self.learning_rate,
 							n_base_filters=64,
 							batch_normalization=False,
-							deconvolution=True)
-		elif self.name == 'UNET_2D':
+							deconvolution=True,
+							pretrained_model=self.pretrained_model)
+		elif 'UNET_2D' in self.name:
 			model = unet_2d.Unet2d(input_shape=self.input_shape,
 								   n_labels=self.class_num,
 								   initial_learning_rate=self.learning_rate)
-		self.model = model.build()
+
+		if 'finetune' in self.name:
+			self.model = model.finetune_model()
+		else:
+			self.model = model.build()
 
 		print('Complete')
 		print('='*100)
@@ -140,14 +147,7 @@ class MMWHS_Train:
 		rlp = cb.ReduceLROnPlateau(monitor='val_loss', factor=0.75, patience=5, verbose=1, mode='auto', min_delta=0.0001, cooldown=0, min_lr=0.000001)
 		tb = cb.TensorBoard(log_dir='../tensor_board', histogram_freq=0, batch_size=1, write_graph=True, write_grads=True, write_images=True,  update_freq='epoch')
 		start = time.time()
-		# history = self.model.fit_generator(x=X, y=Y,
-		# 						batch_size=self.batch_size,
-		# 						epochs=self.epochs,
-		# 						verbose=1,
-		# 						callbacks=[ckp,tb],
-		# 						validation_data=(ValX, ValY),
-		# 						shuffle=True,
-		# 						class_weight=weights)
+
 		if self.dimension=='2D':
 			size[0] = size[0]*self.image_size
 			size[1] = size[1]*self.image_size
@@ -197,7 +197,7 @@ class MMWHS_Train:
 		h['DSC_TOTAL'] = history.history['dice_coefficient']
 		h['VAL_LOSS'] = history.history['val_loss']
 		h['VAL_DSC_TOTAL'] = history.history['val_dice_coefficient']
-		if self.class_num > 1:
+		if self.input_channel > 1:
 			h['DSC0'] = history.history['DSC_0']
 			h['DSC1'] = history.history['DSC_1']
 			h['DSC2'] = history.history['DSC_2']
