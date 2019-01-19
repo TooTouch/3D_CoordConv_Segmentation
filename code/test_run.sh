@@ -1,2 +1,3 @@
-python test.py --dataset=CT --model_name=UNET_3D_4_128_8 --input_channel=1
+python test.py --dataset=CT --model_name=UNET_3D_13_128_1_c3 --input_channel=1
+
 

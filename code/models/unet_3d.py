@@ -16,9 +16,10 @@ try:
 except ImportError:
     from keras.layers.merge import concatenate
 
+
 class Unet3d:
     def __init__(self, input_shape, pool_size=(2, 2, 2), n_labels=1, initial_learning_rate=0.00001, deconvolution=False,
-                      depth=4, n_base_filters=32, batch_normalization=False, pretrained_weights=None, pretrained_model='None'):
+                      depth=5, n_base_filters=32, batch_normalization=False, pretrained_weights=None, pretrained_model='None'):
         '''
 
         :param input_shape: Shape of the input data (x_size, y_size, z_size, n_chanels). The x, y, and z sizes must be
@@ -39,7 +40,7 @@ class Unet3d:
         '''
 
         self.input_shape = input_shape
-        print(self.input_shape)
+        print('Input shape: ',self.input_shape)
         self.pool_size = pool_size
         self.n_labels = n_labels
         self.initial_learning_rate = initial_learning_rate
@@ -101,7 +102,7 @@ class Unet3d:
             else:
                 self.metrics = label_wise_dice_metrics
 
-        model.compile(optimizer=Adam(lr=self.initial_learning_rate), loss=weighted_dice_coefficient_loss, metrics=self.metrics)
+        model.compile(optimizer=Adam(lr=self.initial_learning_rate), loss=[weighted_dice_coefficient_loss, 'categorical_crossentropy'], metrics=[self.metrics])
 
         return model
 

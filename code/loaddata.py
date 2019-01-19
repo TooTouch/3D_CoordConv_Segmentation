@@ -35,10 +35,6 @@ class Load_Data:
             labels[i] = np.array(test_hf['{}_test_label_{}'.format(self.dataset.lower(), i)])
         test_hf.close()
 
-        if self.dimension == '2D':
-            images = images.reshape(-1, self.size, self.size, 1)
-            labels = labels.reshape(-1, self.size, self.size, self.channel)
-
         images = np.moveaxis(images, -1, 1)
         labels = np.moveaxis(labels, -1, 1)
 
@@ -51,17 +47,16 @@ class Load_Data:
         """
         Generator to yield inputs and their labels in batches.
         """
-        d = 2 if self.dimension=='2D' else 3
         train_hf = h5py.File(self.train_dir, 'r')
-
         while True:
-            batch_imgs = np.array([]).reshape((0,) + (1,) + (self.size,) * d )
-            batch_labels = np.array([]).reshape((0,) + (self.channel,) + (self.size,) * d)
+            batch_imgs = np.array([]).reshape((0,) + (1,) + (self.size,) * 3 )
+            batch_labels = np.array([]).reshape((0,) + (self.channel,) + (self.size,) * 3)
+
 
             for i in range(batch_size):
                 idx = np.random.choice(subjects)
-                img = np.array(train_hf['{}_image_{}'.format(self.dataset.lower(),idx)]).reshape((-1,) + (self.size,) * d + (1,))
-                label = np.array(train_hf['{}_label_split_{}'.format(self.dataset.lower(),idx)])[2].reshape((-1,) + (self.size,) * d + (self.channel,))
+                img = np.array(train_hf['{}_image_{}'.format(self.dataset.lower(),idx)]).reshape((-1,) + (self.size,) * 3 + (1,))
+                label = np.array(train_hf['{}_label_{}'.format(self.dataset.lower(),idx)]).reshape((-1,) + (self.size,) * 3 + (self.channel,))
 
                 img /= 255.
 
@@ -72,3 +67,29 @@ class Load_Data:
                 batch_labels = np.vstack([batch_labels, label])
 
                 yield batch_imgs, batch_labels
+
+    def data_gen_2nd(self, pred_images, batch_size, subjects):
+        """
+        Generator to yield inputs and their labels in batches.
+        """
+
+        while True:
+            batch_imgs = np.array([]).reshape((0,) + (1,) + (self.size,) * d)
+            batch_labels = np.array([]).reshape((0,) + (self.channel,) + (self.size,) * d)
+
+            for i in range(batch_size):
+                idx = np.random.choice(subjects)
+                img = np.array(train_hf['{}_image_{}'.format(self.dataset.lower(), idx)]).reshape((-1,) + (self.size,) * d + (1,))
+                label = np.array(train_hf['{}_label_{}'.format(self.dataset.lower(), idx)]).reshape((-1,) + (self.size,) * d + (self.channel,))
+
+                img /= 255.
+
+                img = np.moveaxis(img, -1, 1)
+                label = np.moveaxis(label, -1, 1)
+
+                batch_imgs = np.vstack([batch_imgs, img])
+                batch_labels = np.vstack([batch_labels, label])
+
+                yield batch_imgs, batch_labels
+
+

@@ -1,0 +1,50 @@
+{
+	"ID": 12,
+	"NAME": "UNET_3D",
+	"TIME": "00:00:47",
+	"INPUT_SHAPE": [
+		null,
+		1,
+		128,
+		128,
+		128
+	],
+	"DATA": "CT",
+	"CLASS_NUM": 1,
+	"IMAGE_SIZE": 128,
+	"CV_RATE": 0.8,
+	"CV_SEED": 223,
+	"EPOCHS": 1,
+	"BATCH_SIZE": 1,
+	"LEARNINGRATE": 1e-05,
+	"DIMENSION": "3D",
+	"COMPILE": {
+		"OPTIMIZER": "<class 'keras.optimizers.Adam'>",
+		"LOSS": "<function weighted_dice_coefficient_loss at 0x000002BA5BDDFD08>",
+		"METRICS": "['loss', 'dice_coefficient']"
+	},
+	"HISTORY": {
+		"epochs": 1,
+		"steps": 16,
+		"verbose": 1,
+		"do_validation": true,
+		"metrics": [
+			"loss",
+			"dice_coefficient",
+			"val_loss",
+			"val_dice_coefficient"
+		],
+		"LOSS": [
+			-0.08860991592518985
+		],
+		"DSC_TOTAL": [
+			0.08861071011051536
+		],
+		"VAL_LOSS": [
+			-0.12086230982095003
+		],
+		"VAL_DSC_TOTAL": [
+			0.12086305022239685
+		]
+	}
+}

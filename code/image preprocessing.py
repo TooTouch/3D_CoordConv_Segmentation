@@ -70,7 +70,7 @@ mr_pad_labels = list()
 label_encoder = preprocessing.LabelEncoder()
 
 # hfd5
-train_set = h5py.File(save_dir + '/train_hf'+str(size) + '_' + str(class_num+1),'w')
+train_set = h5py.File(save_dir + '/train_hf'+str(size) + '_' + str(class_num),'w')
 test_set = h5py.File(save_dir + '/test_hf'+str(size),'w')
 
 # functions
@@ -188,55 +188,86 @@ print('CT processing')
 print('-'*100)
 for i in tqdm(range(len(ct_images))):
     image = ct_images[i].get_data()
+    image_mask = ct_images[i].get_data()
+    label = ct_labels[i].get_data()
+
+    # image save
     image = pad3d(image)
     image = image_preprocess(image, new_size=size)
     train_set.create_dataset('ct_image_{}'.format(i), data=image, compression='lzf')
-    del(image)
-for i in tqdm(range(len(ct_labels))):
-    image = ct_labels[i].get_data()
-    image = pad3d(image)
-    image = image_preprocess(image, new_size=size, mask=True, channel=class_num)
-    train_set.create_dataset('ct_label_{}'.format(i), data=image, compression='lzf')
 
-    s_image = np.argmax(image, axis=-1)
-    s_image = s_image.reshape(s_image.shape + (1,))
+    # masked image save
+    mask = label == 0
+    image_mask[mask] = 0
+    image_mask = pad3d(image_mask)
+    image_mask = image_preprocess(image_mask, new_size=size)
+    train_set.create_dataset('ct_image_mask_{}'.format(i), data=image_mask, compression='lzf')
+
+    del image, image_mask
+
+    # multiclass label save
+    label = pad3d(label)
+    label = image_preprocess(label, new_size=size, mask=True, channel=class_num)
+    train_set.create_dataset('ct_label_{}'.format(i), data=label, compression='lzf')
+
+    # label by class save
+    s_label = np.argmax(label, axis=-1)
+    s_label = s_label.reshape(s_label.shape + (1,))
 
     c = np.zeros((7, size, size, size, 1))
     for j in range(1, 8):
-        mask = s_image == j
+        mask = s_label == j
         c[j - 1, :, :, :, :] = mask.astype(int)
     train_set.create_dataset('ct_label_split_{}'.format(i), data=c, compression='lzf')
 
-    del image, c
+    del label, c
+
+
 
 print('MR processing')
 print('-' * 100)
 transform_idx = list()
 for i in tqdm(range(len(mr_images))):
     image = mr_images[i].get_data()
+    image_mask = mr_images[i].get_data()
+    label = mr_labels[i].get_data()
+
+    # image save
     image, idx = axis_transform(image)
     image = pad3d(image)
     image = image_preprocess(image, new_size=size)
     train_set.create_dataset('mr_image_{}'.format(i), data=image, compression='lzf')
     transform_idx.append(idx)
-    del(image)
-for i in tqdm(range(len(mr_labels))):
-    image = mr_labels[i].get_data()
-    if transform_idx[i]:
-        image, _ = axis_transform(image)
-    image = pad3d(image)
-    image = image_preprocess(image, new_size=size, mask=True, channel=class_num)
-    train_set.create_dataset('mr_label_{}'.format(i), data=image, compression='lzf')
 
-    s_image = np.argmax(image, axis=-1)
-    s_image = s_image.reshape(s_image.shape + (1,))
+    # masked image save
+    mask = label == 0
+    image_mask[mask] = 0
+    if transform_idx[i]:
+        image_mask, _ = axis_transform(image_mask)
+    image_mask = pad3d(image_mask)
+    image_mask = image_preprocess(image_mask, new_size=size)
+    train_set.create_dataset('mr_image_mask_{}'.format(i), data=image_mask, compression='lzf')
+
+    del image, image_mask
+
+    # multiclass label save
+    if transform_idx[i]:
+        label, _ = axis_transform(label)
+    label = pad3d(label)
+    label = image_preprocess(label, new_size=size, mask=True, channel=class_num)
+    train_set.create_dataset('mr_label_{}'.format(i), data=label, compression='lzf')
+
+    # label by class save
+    s_label = np.argmax(label, axis=-1)
+    s_label = s_label.reshape(s_label.shape + (1,))
     c = np.zeros((7, size, size, size, 1))
     for j in range(1, 8):
-        mask = s_image == j
+        mask = s_label == j
         c[j - 1, :, :, :, :] = mask.astype(int)
     train_set.create_dataset('mr_label_split_{}'.format(i), data=c, compression='lzf')
 
-    del image, c
+    del label, c
+
 train_set.close()
 
 

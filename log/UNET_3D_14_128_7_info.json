@@ -1,0 +1,114 @@
+{
+	"ID": 14,
+	"NAME": "UNET_3D",
+	"TIME": "00:00:53",
+	"INPUT_SHAPE": [
+		null,
+		1,
+		128,
+		128,
+		128
+	],
+	"DATA": "CT",
+	"CLASS_NUM": 7,
+	"IMAGE_SIZE": 128,
+	"CV_RATE": 0.8,
+	"CV_SEED": 223,
+	"EPOCHS": 1,
+	"BATCH_SIZE": 1,
+	"LEARNINGRATE": 1e-05,
+	"DIMENSION": "3D",
+	"COMPILE": {
+		"OPTIMIZER": "<class 'keras.optimizers.Adam'>",
+		"LOSS": "<function weighted_dice_coefficient_loss at 0x000001E8C02D2D08>",
+		"METRICS": "['loss', 'dice_coefficient', 'DSC_0', 'DSC_1', 'DSC_2', 'DSC_3', 'DSC_4', 'DSC_5', 'DSC_6', 'DSC_7']"
+	},
+	"HISTORY": {
+		"epochs": 1,
+		"steps": 16,
+		"verbose": 1,
+		"do_validation": true,
+		"metrics": [
+			"loss",
+			"dice_coefficient",
+			"DSC_0",
+			"DSC_1",
+			"DSC_2",
+			"DSC_3",
+			"DSC_4",
+			"DSC_5",
+			"DSC_6",
+			"DSC_7",
+			"val_loss",
+			"val_dice_coefficient",
+			"val_DSC_0",
+			"val_DSC_1",
+			"val_DSC_2",
+			"val_DSC_3",
+			"val_DSC_4",
+			"val_DSC_5",
+			"val_DSC_6",
+			"val_DSC_7"
+		],
+		"LOSS": [
+			-0.0074359700083732605
+		],
+		"DSC_TOTAL": [
+			0.014743286068551242
+		],
+		"VAL_LOSS": [
+			-0.007801055209711194
+		],
+		"VAL_DSC_TOTAL": [
+			0.0147496466524899
+		],
+		"DSC0": [
+			0.015519981097895652
+		],
+		"DSC1": [
+			0.007257626566570252
+		],
+		"DSC2": [
+			0.005874580499948934
+		],
+		"DSC3": [
+			0.006588514559553005
+		],
+		"DSC4": [
+			0.0062550741276936606
+		],
+		"DSC5": [
+			0.007146421470679343
+		],
+		"DSC6": [
+			0.0055928201181814075
+		],
+		"DSC7": [
+			0.005512168339919299
+		],
+		"VAL_DSC0": [
+			0.015521122142672539
+		],
+		"VAL_DSC1": [
+			0.007863770122639835
+		],
+		"VAL_DSC2": [
+			0.006538148852996528
+		],
+		"VAL_DSC3": [
+			0.0069143809960223734
+		],
+		"VAL_DSC4": [
+			0.006791589665226638
+		],
+		"VAL_DSC5": [
+			0.0076684633968397975
+		],
+		"VAL_DSC6": [
+			0.005511093535460532
+		],
+		"VAL_DSC7": [
+			0.0058498651487752795
+		]
+	}
+}

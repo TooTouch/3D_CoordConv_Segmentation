@@ -25,11 +25,11 @@ class MMWHS_Test:
 
 		self.root_dir = os.path.abspath(os.path.join(os.getcwd(), '..'))
 		self.model_dir = os.path.join(self.root_dir, 'model')
-		self.test_dir = os.path.join(self.root_dir, 'dataset/h5py/test_hf' + str(self.image_size))
+		self.test_dir = os.path.join(self.root_dir, 'dataset/h5py/train_hf' + str(self.image_size) + '_1')
 		self.save_dir = os.path.join(self.root_dir, 'predict_image')
 
 		self.model = None
-		self.test_image_num = 40
+		self.test_image_num = 20
 
 		self.test_hf = h5py.File(self.test_dir, 'r')
 		print('='*100)
@@ -61,9 +61,7 @@ class MMWHS_Test:
 		"""
         Generator to yield inputs in batches.
         """
-		d = 2 if self.dimension == '2D' else 3
-
-		img = np.array(self.test_hf['{}_test_{}'.format(self.dataset.lower(), idx)]).reshape((-1,) + (self.image_size,) * d + (1,))
+		img = np.array(self.test_hf['{}_image_{}'.format(self.dataset.lower(), idx)]).reshape((-1,) + (self.image_size,) * d + (1,))
 		img = np.moveaxis(img, -1, 1)
 		return img
 
@@ -86,7 +84,7 @@ class MMWHS_Test:
 		print('='*100)
 		print('Save predict images')
 		pred_image = nib.Nifti1Image(pred, affine=np.eye(4))
-		nib.save(pred_image, self.save_dir + '/{}_test_pred_{}.nii'.format(self.dataset, idx))
+		nib.save(pred_image, self.save_dir + '/{}_train_pred_{}.nii'.format(self.dataset, idx))
 		print('Complete')
 
 

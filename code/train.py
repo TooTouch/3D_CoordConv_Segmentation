@@ -50,10 +50,9 @@ class MMWHS_Train:
 
 		# model 
 		self.model = None
-		if self.dimension == '2D':
-			self.input_shape = ((1,) + (self.image_size ,)*2)
-		elif self.dimension == '3D':
-			self.input_shape = ((1,) + (self.image_size ,)*3)
+
+		self.input_shape = ((1,) + (self.image_size ,)*3)
+
 
 	def run(self):
 		# Create generator
@@ -81,6 +80,7 @@ class MMWHS_Train:
 		# report
 		self.report_json(history=history, time=train_time)
 
+
 	def data_split(self, images, labels):
 		'''
 		:param images: Images
@@ -92,10 +92,6 @@ class MMWHS_Train:
 		print('-'*100)
 		print('Number of train subjects: ',train_cnt)
 		print('Number of validation subjects: ',subjects - train_cnt)
-
-		if self.dimension=='2D':
-			subjects *= self.image_size
-			train_cnt *= self.image_size
 
 		idx = np.arange(subjects)
 
@@ -115,18 +111,15 @@ class MMWHS_Train:
 		print('Load Model')
 		print('Model name: ', self.save_name)
 		print('-'*100)
-		if 'UNET_3D' in self.name:
-			model = unet_3d.Unet3d(input_shape=self.input_shape,
-							n_labels=self.input_channel,
-							initial_learning_rate=self.learning_rate,
-							n_base_filters=64,
-							batch_normalization=False,
-							deconvolution=True,
-							pretrained_model=self.pretrained_model)
-		elif 'UNET_2D' in self.name:
-			model = unet_2d.Unet2d(input_shape=self.input_shape,
-								   n_labels=self.class_num,
-								   initial_learning_rate=self.learning_rate)
+
+		model = unet_3d.Unet3d(input_shape=self.input_shape,
+						n_labels=self.input_channel,
+						initial_learning_rate=self.learning_rate,
+						n_base_filters=64,
+						batch_normalization=False,
+						deconvolution=True,
+						pretrained_model=self.pretrained_model)
+
 
 		if 'finetune' in self.name:
 			self.model = model.finetune_model()
@@ -148,10 +141,6 @@ class MMWHS_Train:
 		tb = cb.TensorBoard(log_dir='../tensor_board', histogram_freq=0, batch_size=1, write_graph=True, write_grads=True, write_images=True,  update_freq='epoch')
 		start = time.time()
 
-		if self.dimension=='2D':
-			size[0] = size[0]*self.image_size
-			size[1] = size[1]*self.image_size
-
 		history = self.model.fit_generator(generator=train,
 											steps_per_epoch=size[0]//self.batch_size,
 											epochs=self.epochs,
@@ -168,6 +157,24 @@ class MMWHS_Train:
 		print('Train time: ',train_time)
 		print('='*100)
 		return history, train_time
+
+
+	def output_crop(self, pred_images):
+		xyz = np.zeros((len(predict_image_list), 3), dtype=int)
+		xyz01 = np.zeros((len(predict_image_list), 3, 2), dtype=int)
+
+		for img in pred_images:
+			z = np.sum(img, axis=0)
+			x = np.sum(img, axis=1)
+
+			x_x_idx = np.where(np.sum(x, axis=0))[0]
+			z_y_idx = np.where(np.sum(z, axis=1))[0]
+			x_y_idx = np.where(np.sum(x, axis=1))[0]
+
+			xyz[i] = np.array([len(x_x_idx), len(z_y_idx), len(x_y_idx)], dtype=int)
+			xyz01[i] = np.array([[x_y_idx[0], x_y_idx[-1]], [z_y_idx[0], z_y_idx[-1]], [x_x_idx[0], x_x_idx[-1]]],
+								dtype=int)
+		return xyz, xyz01
 
 
 	def report_json(self, history, time):
