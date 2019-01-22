@@ -7,7 +7,7 @@ from keras import layers as KL
 from keras.optimizers import Adam
 from keras.models import load_model
 
-from metrics import dice_coefficient_loss, get_label_dice_coefficient_function, dice_coefficient, weighted_dice_coefficient_loss
+from metrics import *
 
 K.set_image_data_format("channels_first")
 
@@ -19,7 +19,7 @@ except ImportError:
 
 class Unet3d:
     def __init__(self, input_shape, pool_size=(2, 2, 2), n_labels=1, initial_learning_rate=0.00001, deconvolution=False,
-                      depth=5, n_base_filters=32, batch_normalization=False, pretrained_weights=None, pretrained_model='None'):
+                      depth=4, n_base_filters=32, batch_normalization=False, pretrained_weights=None, pretrained_model='None'):
         '''
 
         :param input_shape: Shape of the input data (x_size, y_size, z_size, n_chanels). The x, y, and z sizes must be
@@ -85,6 +85,8 @@ class Unet3d:
             current_layer = self.create_convolution_block(n_filters=self.n_base_filters*(2**layer_depth),
                                                      input_layer=current_layer)
 
+            current_layer = KL.Conv3D(32, (1, 1, 1))(current_layer)
+            current_layer = KL.Activation('relu')(current_layer)
         final_convolution = KL.Conv3D(self.n_labels, (1, 1, 1))(current_layer)
         act = KL.Activation(self.activation_name)(final_convolution)
         model = Model(inputs=inputs, outputs=act)
@@ -102,7 +104,8 @@ class Unet3d:
             else:
                 self.metrics = label_wise_dice_metrics
 
-        model.compile(optimizer=Adam(lr=self.initial_learning_rate), loss=[weighted_dice_coefficient_loss, 'categorical_crossentropy'], metrics=[self.metrics])
+
+        model.compile(optimizer=Adam(lr=self.initial_learning_rate), loss=softmax_weighted_loss, metrics=self.metrics)
 
         return model
 

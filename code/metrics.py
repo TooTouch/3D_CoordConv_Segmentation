@@ -39,6 +39,32 @@ def get_label_dice_coefficient_function(label_index):
     f.__setattr__('__name__', 'DSC_{0}'.format(label_index))
     return f
 
+def categorical_crossentropy(y_true, y_pred):
+    return K.categorical_crossentropy(y_true, y_pred)
+
+def softmax_weighted_loss(labels, logits):
+    """
+    Loss = weighted * -target*log(softmax(logits))
+    :param logits: probability score
+    :param labels: ground_truth
+    :return: softmax-weifhted loss
+    """
+
+    gt = labels
+    softmaxpred = logits
+    loss = 0
+    for i in range(8):
+        gti = gt[:, i, :, :, :]
+        predi = softmaxpred[:, i, :, :, :]
+        # weighted = 1 - (K.sum(gti) / K.sum(gt))
+        # print("class %d"%(i) )
+        # print(weighted)
+        loss = loss + -K.mean(gti * K.log(K.clip(predi, 0.005, 1)))
+    return loss
+
+def combine_loss(y_true, y_pred):
+    return softmax_weighted_loss(y_pred, y_true) + weighted_dice_coefficient(y_true, y_pred)
+
 
 dice_coef = dice_coefficient
 dice_coef_loss = dice_coefficient_loss
