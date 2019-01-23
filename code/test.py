@@ -1,5 +1,5 @@
 from loaddata import Load_Data
-from metrics import weighted_dice_coefficient_loss, dice_coefficient, get_label_dice_coefficient_function
+from metrics import *
 
 import os
 import numpy as np
@@ -9,6 +9,7 @@ import time
 import h5py
 from pprint import pprint
 from tqdm import tqdm
+from functools import partial
 
 from keras import models
 
@@ -21,11 +22,10 @@ class MMWHS_Test:
 		self.dataset = args.dataset
 		self.input_channel = args.input_channel
 		self.image_size = args.image_size
-		self.dimension = args.dimension
 
 		self.root_dir = os.path.abspath(os.path.join(os.getcwd(), '..'))
 		self.model_dir = os.path.join(self.root_dir, 'model')
-		self.test_dir = os.path.join(self.root_dir, 'dataset/h5py/train_hf' + str(self.image_size) + '_1')
+		self.test_dir = os.path.join(self.root_dir, 'dataset/h5py/train_hf' + str(self.image_size) + '_7')
 		self.save_dir = os.path.join(self.root_dir, 'predict_image')
 
 		self.model = None
@@ -61,7 +61,7 @@ class MMWHS_Test:
 		"""
         Generator to yield inputs in batches.
         """
-		img = np.array(self.test_hf['{}_image_{}'.format(self.dataset.lower(), idx)]).reshape((-1,) + (self.image_size,) * d + (1,))
+		img = np.array(self.test_hf['{}_image_{}'.format(self.dataset.lower(), idx)]).reshape((-1,) + (self.image_size,) * 3 + (1,))
 		img = np.moveaxis(img, -1, 1)
 		return img
 
@@ -72,8 +72,9 @@ class MMWHS_Test:
 		custom_objects = {'weighted_dice_coefficient_loss': weighted_dice_coefficient_loss,'dice_coefficient': dice_coefficient}
 
 		if self.input_channel > 1:
-			for index in range(self.input_channel):
-				custom_objects['DSC_{}'.format(index)] = get_label_dice_coefficient_function(index)
+			for label_index in range(self.input_channel):
+				custom_objects['DSC_{0}'.format(label_index)] = get_label_dice_coefficient_function(label_index)
+		print(custom_objects.keys())
 
 		self.model = models.load_model(self.model_dir + '/' + self.model_name + '.h5', custom_objects=custom_objects)
 
@@ -94,7 +95,6 @@ if __name__=='__main__':
 	parser.add_argument('--model_name', type=str, help='Model name')
 	parser.add_argument('--input_channel', type=int, default=8, help='Number of class')
 	parser.add_argument('--image_size', type=int, default=128, help='Input size')
-	parser.add_argument('--dimension', type=str, default='3D', help='2D or 3D')
 	args = parser.parse_args()
 
 	t = MMWHS_Test(args)

@@ -2,7 +2,7 @@
 	"NAME": "UNET_3D",
 	"DATA": "CT",
 	"CLASS_NUM": 7,
-	"IMAGE_SIZE": 128,
+	"IMAGE_SIZE": 96,
 	"INPUT_CHANNEL": 8,
 	"DIMENSION": "3D",
 	"CV_RATE": 0.8,

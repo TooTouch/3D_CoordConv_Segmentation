@@ -40,10 +40,6 @@ class MMWHS_Train:
 		self.optimizer = params['OPTIMIZER']
 		self.learning_rate = params['LEARNINGRATE']
 		self.dimension = params['DIMENSION']
-		if 'PRETRAINED_MODEL' in params.keys():
-			self.pretrained_model = params['PRETRAINED_MODEL']
-		else:
-			self.pretrained_model = 'None'
 
 		self.id = len([name for name in os.listdir(self.log_dir) if self.name in name])
 		self.save_name = self.name + '_' + str(self.id) + '_' + str(self.image_size) + '_' + str(self.class_num)
@@ -51,7 +47,7 @@ class MMWHS_Train:
 		# model 
 		self.model = None
 
-		self.input_shape = ((1,) + (self.image_size ,)*3)
+		self.input_shape = ((self.image_size ,)*3 + (1,))
 
 
 	def run(self):
@@ -114,11 +110,10 @@ class MMWHS_Train:
 
 		model = unet_3d.Unet3d(input_shape=self.input_shape,
 						n_labels=self.input_channel,
-						initial_learning_rate=self.learning_rate,
-						n_base_filters=64,
+						lrate=self.learning_rate,
+						n_base_filters=32,
 						batch_normalization=False,
-						deconvolution=True,
-						pretrained_model=self.pretrained_model)
+						deconvolution=True)
 
 
 		if 'finetune' in self.name:
@@ -158,23 +153,6 @@ class MMWHS_Train:
 		print('='*100)
 		return history, train_time
 
-
-	def output_crop(self, pred_images):
-		xyz = np.zeros((len(predict_image_list), 3), dtype=int)
-		xyz01 = np.zeros((len(predict_image_list), 3, 2), dtype=int)
-
-		for img in pred_images:
-			z = np.sum(img, axis=0)
-			x = np.sum(img, axis=1)
-
-			x_x_idx = np.where(np.sum(x, axis=0))[0]
-			z_y_idx = np.where(np.sum(z, axis=1))[0]
-			x_y_idx = np.where(np.sum(x, axis=1))[0]
-
-			xyz[i] = np.array([len(x_x_idx), len(z_y_idx), len(x_y_idx)], dtype=int)
-			xyz01[i] = np.array([[x_y_idx[0], x_y_idx[-1]], [z_y_idx[0], z_y_idx[-1]], [x_x_idx[0], x_x_idx[-1]]],
-								dtype=int)
-		return xyz, xyz01
 
 
 	def report_json(self, history, time):

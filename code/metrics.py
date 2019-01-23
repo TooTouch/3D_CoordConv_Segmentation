@@ -3,11 +3,11 @@ from functools import partial
 from keras import backend as K
 
 
-def dice_coefficient(y_true, y_pred, smooth=1.):
+def dice_coefficient(y_true, y_pred):
     y_true_f = K.flatten(y_true)
     y_pred_f = K.flatten(y_pred)
     intersection = K.sum(y_true_f * y_pred_f)
-    return (2. * intersection + smooth) / (K.sum(y_true_f) + K.sum(y_pred_f) + smooth)
+    return (2. * intersection) / (K.sum(y_true_f) + K.sum(y_pred_f))
 
 
 def dice_coefficient_loss(y_true, y_pred):
@@ -29,9 +29,17 @@ def weighted_dice_coefficient(y_true, y_pred, axis=(-3, -2, -1), smooth=0.00001)
 def weighted_dice_coefficient_loss(y_true, y_pred):
     return -weighted_dice_coefficient(y_true, y_pred)
 
+def label_wise_dice_coefficient_loss(y_true, y_pred):
+    return K.sum([-dice_coefficient(y_true[:,:,:,:,i], y_pred[:,:,:,:,i]) for label_index in range(8)])
+
+
+def get_label_dice_coefficient_loss_function(label_index):
+    f = partial(label_wise_dice_coefficient, label_index=label_index)
+    f.__setattr__('__name__', 'DSC_{0}_loss'.format(label_index))
+    return f
 
 def label_wise_dice_coefficient(y_true, y_pred, label_index):
-    return dice_coefficient(y_true[:, label_index], y_pred[:, label_index])
+    return dice_coefficient(y_true[:,:,:,:,label_index], y_pred[:,:,:,:,label_index])
 
 
 def get_label_dice_coefficient_function(label_index):
@@ -53,13 +61,15 @@ def softmax_weighted_loss(labels, logits):
     gt = labels
     softmaxpred = logits
     loss = 0
+    # labels = K.print_tensor(labels, message='labels.shape: ')
+    # logits = K.print_tensor(logits, message='logits.shape: ')
     for i in range(8):
-        gti = gt[:, i, :, :, :]
-        predi = softmaxpred[:, i, :, :, :]
-        # weighted = 1 - (K.sum(gti) / K.sum(gt))
+        gti = gt[:, :, :, :, i]
+        predi = softmaxpred[:, :, :, :, i]
+        weighted = 1 - (K.sum(gti) / K.sum(gt))
         # print("class %d"%(i) )
         # print(weighted)
-        loss = loss + -K.mean(gti * K.log(K.clip(predi, 0.005, 1)))
+        loss = loss + -K.mean(weighted * gti * K.log(K.clip(predi, 0.005, 1)))
     return loss
 
 def combine_loss(y_true, y_pred):
