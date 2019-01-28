@@ -18,7 +18,7 @@ except ImportError:
 
 
 class Unet3d:
-    def __init__(self, input_shape, pool_size=(2, 2, 2), n_labels=1, lrate=0.00001, deconvolution=False,
+    def __init__(self, input_size, pool_size=(2, 2, 2), n_labels=1, lrate=0.00001, deconvolution=False,
                       depth=4, n_base_filters=32, batch_normalization=False):
         '''
 
@@ -39,12 +39,11 @@ class Unet3d:
         :param pretrained_model:
         '''
 
-        self.input_shape = input_shape
-        print('Input shape: ',self.input_shape)
+        self.input_size = input_size
         self.pool_size = pool_size
         self.n_labels = n_labels
         self.lrate = lrate
-        self.deconvolution = deconvolution,
+        self.deconvolution = deconvolution
         self.depth = depth
         self.n_base_filters = n_base_filters
         self.metrics = dice_coefficient
@@ -59,7 +58,8 @@ class Unet3d:
 
 
     def build(self):
-        inputs = Input(self.input_shape)
+        input_shape = ((self.input_size,) * 3 + (1,))
+        inputs = Input(input_shape)
         # Encoder
         en_conv1_1 = self.create_convolution_block(input_layer=inputs, n_filters=self.n_base_filters*2)
         en_conv1_2 = self.create_convolution_block(input_layer=en_conv1_1, n_filters=self.n_base_filters*2)
@@ -89,15 +89,16 @@ class Unet3d:
 
         deconv3 = self.get_up_convolution(pool_size=self.pool_size, n_filters=self.n_base_filters * 2)(de_conv2_2)
         concat3 = concatenate([deconv3, en_conv1_2], axis=-1)
-        de_conv3_1 = self.create_convolution_block(input_layer=concat3, n_filters=self.n_base_filters * 2)
-        de_conv3_2 = self.create_convolution_block(input_layer=de_conv3_1, n_filters=self.n_base_filters * 2)
+        de_conv1_1 = self.create_convolution_block(input_layer=concat3, n_filters=self.n_base_filters * 2)
+        de_conv1_2 = self.create_convolution_block(input_layer=de_conv1_1, n_filters=self.n_base_filters * 2)
 
         # output
-        conv = self.create_convolution_block(input_layer=de_conv3_2, n_filters=self.n_base_filters)
+        conv = self.create_convolution_block(input_layer=de_conv1_2, n_filters=self.n_base_filters)
         output = KL.Conv3D(self.n_labels, (1, 1, 1), activation=self.activation_name, data_format='channels_last')(conv)
 
         model = Model(inputs=inputs, outputs=output)
 
+        # Metrics and Loss function
         if not isinstance(self.metrics, list):
             self.metrics = [self.metrics]
         if not isinstance(self.loss, list):

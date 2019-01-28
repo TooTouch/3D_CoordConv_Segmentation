@@ -50,7 +50,7 @@ def get_label_dice_coefficient_function(label_index):
 def categorical_crossentropy(y_true, y_pred):
     return K.categorical_crossentropy(y_true, y_pred)
 
-def softmax_weighted_loss(labels, logits):
+def softmax_weighted_loss(y_true, y_pred):
     """
     Loss = weighted * -target*log(softmax(logits))
     :param logits: probability score
@@ -58,18 +58,14 @@ def softmax_weighted_loss(labels, logits):
     :return: softmax-weifhted loss
     """
 
-    gt = labels
-    softmaxpred = logits
+    # y_true = K.cast(y_true, dtype='int32')
+    # y_true = K.one_hot(y_true, 8)
     loss = 0
-    # labels = K.print_tensor(labels, message='labels.shape: ')
-    # logits = K.print_tensor(logits, message='logits.shape: ')
     for i in range(8):
-        gti = gt[:, :, :, :, i]
-        predi = softmaxpred[:, :, :, :, i]
-        weighted = 1 - (K.sum(gti) / K.sum(gt))
-        # print("class %d"%(i) )
-        # print(weighted)
-        loss = loss + -K.mean(weighted * gti * K.log(K.clip(predi, 0.005, 1)))
+        y_truei = y_true[:, :, :, :, i]
+        y_predi = y_pred[:, :, :, :, i]
+        weighted = 1 - (K.sum(y_truei) / K.sum(y_true))
+        loss = loss + -K.mean(weighted * y_truei * K.log(K.clip(y_predi, 0.005, 1)))
     return loss
 
 def combine_loss(y_true, y_pred):

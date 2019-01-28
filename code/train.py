@@ -1,6 +1,6 @@
 from keras import callbacks as cb
 
-from loaddata import Load_Data
+from loaddata import *
 from models import unet_3d, unet_2d
 
 import os
@@ -19,6 +19,7 @@ class MMWHS_Train:
 		param_dir = os.path.join(self.root_dir + '/training_params/', json_file)
 		self.model_dir = os.path.join(self.root_dir, 'model')
 		self.log_dir = os.path.join(self.root_dir, 'log')
+		self.train_dir = os.path.abspath(os.path.join(self.root_dir, 'dataset/ct_train_test/ct_train'))
 		# open parameters 
 		f = open(param_dir)
 		params = json.load(f)
@@ -30,41 +31,38 @@ class MMWHS_Train:
 
 		self.name = params['NAME']
 		self.data = params['DATA']
-		self.class_num =  params['CLASS_NUM']
-		self.input_channel = params['INPUT_CHANNEL']
-		self.image_size = params['IMAGE_SIZE']
-		self.cv_rate = params['CV_RATE']
-		self.cv_seed = params['CV_SEED']
+		self.patch_dim = params['PATCH_DIM']
+		self.resize_r = params['RESIZE_R']
 		self.epochs = params['EPOCHS']
+		self.output_channel = params['OUTPUT_CHANNEL']
 		self.batch_size = params['BATCH_SIZE']
 		self.optimizer = params['OPTIMIZER']
 		self.learning_rate = params['LEARNINGRATE']
-		self.dimension = params['DIMENSION']
 
 		self.id = len([name for name in os.listdir(self.log_dir) if self.name in name])
-		self.save_name = self.name + '_' + str(self.id) + '_' + str(self.image_size) + '_' + str(self.class_num)
-
+		self.save_name = self.name + '_' + str(self.id)
 		# model 
 		self.model = None
 
-		self.input_shape = ((self.image_size ,)*3 + (1,))
 
 
 	def run(self):
 		# Create generator
-		LD = Load_Data(dataset=self.data, class_num=self.class_num, channel=self.input_channel, dimension=self.dimension, size=self.image_size)
 
 		# split train and validation
-		subjects = list(range(20)) # 20 is Number of subjects
-		choice = np.random.choice(subjects, size=int(20*self.cv_rate), replace=False)
-		train_subjects = list(map(lambda x: subjects.pop(x), sorted(choice, key=lambda x: -x)))
-		valid_subjects = subjects
+		valid_subjects = list()
+		train_subjects = list()
+		for i in range(0,21):
+			if i % 4 == 0 and i != 0 :
+				valid_subjects.append(i)
+			else:
+				train_subjects.append(i)
 
 		size = [len(train_subjects), len(valid_subjects)]
 		print('Number of train subjects: ',size[0])
 		print('Number of valid subjects: ',size[1])
-		train_gen = LD.data_gen(batch_size=self.batch_size, subjects=train_subjects)
-		valid_gen = LD.data_gen(batch_size=self.batch_size, subjects=valid_subjects)
+		train_gen = data_gen(dir=self.train_dir, batch_size=self.batch_size, patch_dim=self.patch_dim, resize_r=self.resize_r, subjects=train_subjects)
+		valid_gen = data_gen(dir=self.train_dir, batch_size=self.batch_size, patch_dim=self.patch_dim, resize_r=self.resize_r, subjects=valid_subjects)
 
 		# model
 		self.model_()
@@ -77,30 +75,6 @@ class MMWHS_Train:
 		self.report_json(history=history, time=train_time)
 
 
-	def data_split(self, images, labels):
-		'''
-		:param images: Images
-		:param labels: Labels
-		:return: (train_images, train_labels), (valid_images, valid_labels)
-		'''
-		subjects = 20
-		train_cnt = int(subjects*self.cv_rate)
-		print('-'*100)
-		print('Number of train subjects: ',train_cnt)
-		print('Number of validation subjects: ',subjects - train_cnt)
-
-		idx = np.arange(subjects)
-
-		train_idx = idx[:train_cnt]
-		valid_idx = idx[train_cnt:]
-
-		train_images = images[train_idx]
-		train_labels = labels[train_idx]
-		valid_images = images[valid_idx]
-		valid_labels = labels[valid_idx]
-
-		return (train_images, train_labels), (valid_images, valid_labels)
-
 
 	def model_(self):
 		print('='*100)
@@ -108,18 +82,13 @@ class MMWHS_Train:
 		print('Model name: ', self.save_name)
 		print('-'*100)
 
-		model = unet_3d.Unet3d(input_shape=self.input_shape,
-						n_labels=self.input_channel,
-						lrate=self.learning_rate,
-						n_base_filters=32,
-						batch_normalization=False,
-						deconvolution=True)
-
-
-		if 'finetune' in self.name:
-			self.model = model.finetune_model()
-		else:
-			self.model = model.build()
+		model = unet_3d.Unet3d(input_size=self.patch_dim,
+									lrate=self.learning_rate,
+									n_labels=self.output_channel,
+									n_base_filters=32,
+									batch_normalization=False,
+									deconvolution=True)
+		self.model = model.build()
 
 		print('Complete')
 		print('='*100)
@@ -161,16 +130,12 @@ class MMWHS_Train:
 		log['ID'] = self.id
 		log['NAME'] = self.name
 		log['TIME'] = time
-		log['INPUT_SHAPE'] = self.model.input_shape
 		log['DATA'] = self.data
-		log['CLASS_NUM'] = self.class_num
-		log['IMAGE_SIZE'] = self.image_size
-		log['CV_RATE'] = self.cv_rate
-		log['CV_SEED'] = self.cv_seed
+		log['PATCH_DIM'] = self.patch_dim
+		log['RESIZE_R'] = self.resize_r
 		log['EPOCHS'] = self.epochs
 		log['BATCH_SIZE'] =self.batch_size
 		log['LEARNINGRATE'] = self.learning_rate
-		log['DIMENSION'] = self.dimension
 
 		m_compile['OPTIMIZER'] = str(type(self.model.optimizer))
 		m_compile['LOSS'] = str(self.model.loss)
@@ -182,23 +147,22 @@ class MMWHS_Train:
 		h['DSC_TOTAL'] = history.history['dice_coefficient']
 		h['VAL_LOSS'] = history.history['val_loss']
 		h['VAL_DSC_TOTAL'] = history.history['val_dice_coefficient']
-		if self.input_channel > 1:
-			h['DSC0'] = history.history['DSC_0']
-			h['DSC1'] = history.history['DSC_1']
-			h['DSC2'] = history.history['DSC_2']
-			h['DSC3'] = history.history['DSC_3']
-			h['DSC4'] = history.history['DSC_4']
-			h['DSC5'] = history.history['DSC_5']
-			h['DSC6'] = history.history['DSC_6']
-			h['DSC7'] = history.history['DSC_7']
-			h['VAL_DSC0'] = history.history['val_DSC_0']
-			h['VAL_DSC1'] = history.history['val_DSC_1']
-			h['VAL_DSC2'] = history.history['val_DSC_2']
-			h['VAL_DSC3'] = history.history['val_DSC_3']
-			h['VAL_DSC4'] = history.history['val_DSC_4']
-			h['VAL_DSC5'] = history.history['val_DSC_5']
-			h['VAL_DSC6'] = history.history['val_DSC_6']
-			h['VAL_DSC7'] = history.history['val_DSC_7']
+		h['DSC0'] = history.history['DSC_0']
+		h['DSC1'] = history.history['DSC_1']
+		h['DSC2'] = history.history['DSC_2']
+		h['DSC3'] = history.history['DSC_3']
+		h['DSC4'] = history.history['DSC_4']
+		h['DSC5'] = history.history['DSC_5']
+		h['DSC6'] = history.history['DSC_6']
+		h['DSC7'] = history.history['DSC_7']
+		h['VAL_DSC0'] = history.history['val_DSC_0']
+		h['VAL_DSC1'] = history.history['val_DSC_1']
+		h['VAL_DSC2'] = history.history['val_DSC_2']
+		h['VAL_DSC3'] = history.history['val_DSC_3']
+		h['VAL_DSC4'] = history.history['val_DSC_4']
+		h['VAL_DSC5'] = history.history['val_DSC_5']
+		h['VAL_DSC6'] = history.history['val_DSC_6']
+		h['VAL_DSC7'] = history.history['val_DSC_7']
 		log['HISTORY'] = h
 
 		print('='*100)
