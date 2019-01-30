@@ -133,14 +133,14 @@ class Unet3d:
         """
         layer = KL.Conv3D(n_filters, kernel, padding=padding, strides=strides, data_format='channels_last')(input_layer)
         if self.batch_normalization:
-            layer = KL.BatchNormalization(axis=1)(layer)
+            layer = KL.BatchNormalization(axis=-1)(layer)
         elif instance_normalization:
             try:
                 from keras_contrib.layers.normalization import InstanceNormalization
             except ImportError:
                 raise ImportError("Install keras_contrib in order to use instance normalization."
                                   "\nTry: pip install git+https://www.github.com/farizrahman4u/keras-contrib.git")
-            layer = InstanceNormalization(axis=1)(layer)
+            layer = InstanceNormalization(axis=-1)(layer)
         if activation is None:
             return KL.Activation('relu')(layer)
         else:

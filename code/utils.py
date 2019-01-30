@@ -2,14 +2,13 @@ import numpy as np
 import copy
 import nibabel as nib
 from skimage.transform import resize
+from keras.utils import to_categorical
 
-
-def load_data_pairs(pair_list, resize_r, rename_map):
+def load_data_pairs(pair_list, resize_r, output_chn, rename_map):
     """load all volume pairs"""
     img_clec = []
     label_clec = []
 
-    # rename_map = [0, 205, 420, 500, 550, 600, 820, 850]
     for k in range(0, len(pair_list), 2):
         img_path = pair_list[k]
         lab_path = pair_list[k + 1]
@@ -19,17 +18,16 @@ def load_data_pairs(pair_list, resize_r, rename_map):
         ###preprocessing
         # resize
         resize_dim = (np.array(img_data.shape) * resize_r).astype('int')
-        img_data = resize(img_data, resize_dim, order=1, preserve_range=True)
-        lab_data = resize(lab_data, resize_dim, order=0, preserve_range=True)
+        img_data = resize(img_data, resize_dim, order=1, preserve_range=True, mode = 'constant')
+        lab_data = resize(lab_data, resize_dim, order=0, preserve_range=True, mode = 'constant')
         lab_r_data = np.zeros(lab_data.shape, dtype='int32')
 
         # rename labels
         for i in range(len(rename_map)):
             lab_r_data[lab_data == rename_map[i]] = i
 
-        # for s in range(img_data.shape[2]):
-        #     cv2.imshow('img', np.concatenate(((img_data[:,:,s]).astype('uint8'), (lab_r_data[:,:,s]*30).astype('uint8')), axis=1))
-        #     cv2.waitKey(20)
+        lab_r_data = to_categorical(lab_r_data, output_chn)
+        img_data = img_data.reshape(img_data.shape + (1,))
 
         img_clec.append(img_data)
         label_clec.append(lab_r_data)
@@ -38,10 +36,10 @@ def load_data_pairs(pair_list, resize_r, rename_map):
 
 
 
-def get_batch_patches(img_clec, label_clec, patch_dim, batch_size, chn=1, flip_flag=True, rot_flag=True):
+def get_batch_patches(img_clec, label_clec, patch_dim, output_chn, batch_size, chn=1, flip_flag=True, rot_flag=True):
     """generate a batch of paired patches for training"""
     batch_img = np.zeros([batch_size, patch_dim, patch_dim, patch_dim, chn]).astype('float32')
-    batch_label = np.zeros([batch_size, patch_dim, patch_dim, patch_dim]).astype('int32')
+    batch_label = np.zeros([batch_size, patch_dim, patch_dim, patch_dim, output_chn]).astype('int32')
 
     for k in range(batch_size):
         # randomly select an image pair
@@ -53,7 +51,7 @@ def get_batch_patches(img_clec, label_clec, patch_dim, batch_size, chn=1, flip_f
         rand_label = rand_label.astype('int32')
 
         # randomly select a box anchor
-        l, w, h = rand_img.shape
+        l, w, h = rand_img.shape[:-1]
         l_rand = np.arange(l - patch_dim)
         w_rand = np.arange(w - patch_dim)
         h_rand = np.arange(h - patch_dim)
@@ -63,14 +61,14 @@ def get_batch_patches(img_clec, label_clec, patch_dim, batch_size, chn=1, flip_f
         pos = np.array([l_rand[0], w_rand[0], h_rand[0]])
         # crop
         img_temp = copy.deepcopy(
-            rand_img[pos[0]:pos[0] + patch_dim, pos[1]:pos[1] + patch_dim, pos[2]:pos[2] + patch_dim])
+            rand_img[pos[0]:pos[0] + patch_dim, pos[1]:pos[1] + patch_dim, pos[2]:pos[2] + patch_dim, :])
         # normalization
         img_temp = img_temp / 255.0
         mean_temp = np.mean(img_temp)
         dev_temp = np.std(img_temp)
         img_norm = (img_temp - mean_temp) / dev_temp
 
-        label_temp = copy.deepcopy(rand_label[pos[0]:pos[0] + patch_dim, pos[1]:pos[1] + patch_dim, pos[2]:pos[2] + patch_dim])
+        label_temp = copy.deepcopy(rand_label[pos[0]:pos[0] + patch_dim, pos[1]:pos[1] + patch_dim, pos[2]:pos[2] + patch_dim, :])
 
         # # possible augmentation
         # # rotation
@@ -81,15 +79,25 @@ def get_batch_patches(img_clec, label_clec, patch_dim, batch_size, chn=1, flip_f
         #     img_norm = rotate(img_norm, angle=rand_angle[0], axes=(1, 0), reshape=False, order=1)
         #     label_temp = rotate(label_temp, angle=rand_angle[0], axes=(1, 0), reshape=False, order=0)
 
-        batch_img[k, :, :, :, chn-1] = img_norm
-        batch_label[k, :, :, :] = label_temp
+        batch_img[k, :, :, :, :] = img_norm
+        batch_label[k, :, :, :, :] = label_temp
 
     return batch_img, batch_label
 
+def fit_cube_param(vol_dim, cube_size, ita):
+    dim = np.asarray(vol_dim)
+    # cube number and overlap along 3 dimensions
+    fold = dim / cube_size + ita
+    ovlap = np.ceil(np.true_divide((fold * cube_size - dim), (fold - 1)))
+    ovlap = ovlap.astype('int')
 
+    fold = np.ceil(np.true_divide((dim + (fold - 1)*ovlap), cube_size))
+    fold = fold.astype('int')
+
+    return fold, ovlap
 
 # decompose volume into list of cubes
-def decompose_vol2cube(vol_data, batch_size, cube_size, n_chn, ita):
+def decompose_vol2cube(vol_data, batch_size, cube_size, ita, n_chn=1):
     cube_list = []
     # get parameters for decompose
     fold, ovlap = fit_cube_param(vol_data.shape, cube_size, ita)
@@ -152,7 +160,7 @@ def compose_label_cube2vol(cube_list, vol_dim, cube_size, ita, class_n):
                     h_e = h_s + cube_size
                 # histogram for voting
                 for k in range(class_n):
-                    idx_classes_mat[:, :, :, k] = (cube_list[p_count].reshape((96,96,96)) == k)
+                    idx_classes_mat[:, :, :, k] = (cube_list[p_count] == k)
                 # accumulation
                 label_classes_mat[r_s:r_e, c_s:c_e, h_s:h_e, :] = label_classes_mat[r_s:r_e, c_s:c_e, h_s:h_e, :] + idx_classes_mat
 
@@ -160,7 +168,7 @@ def compose_label_cube2vol(cube_list, vol_dim, cube_size, ita, class_n):
     # print 'label mat unique:'
     # print np.unique(label_mat)
 
-    compose_vol = np.argmax(label_classes_mat, axis=3)
+    compose_vol = np.argmax(label_classes_mat, axis=-1)
     # print np.unique(label_mat)
 
     return compose_vol

@@ -31,6 +31,7 @@ class MMWHS_Train:
 
 		self.name = params['NAME']
 		self.data = params['DATA']
+		self.image_num = params['IMAGE_NUM']
 		self.patch_dim = params['PATCH_DIM']
 		self.resize_r = params['RESIZE_R']
 		self.epochs = params['EPOCHS']
@@ -38,6 +39,7 @@ class MMWHS_Train:
 		self.batch_size = params['BATCH_SIZE']
 		self.optimizer = params['OPTIMIZER']
 		self.learning_rate = params['LEARNINGRATE']
+		self.batch_norm = bool(params['BATCH_NORM'])
 
 		self.id = len([name for name in os.listdir(self.log_dir) if self.name in name])
 		self.save_name = self.name + '_' + str(self.id)
@@ -52,8 +54,8 @@ class MMWHS_Train:
 		# split train and validation
 		valid_subjects = list()
 		train_subjects = list()
-		for i in range(0,21):
-			if i % 4 == 0 and i != 0 :
+		for i in range(0,20):
+			if (i+1) % 4 == 0 and i != 0 :
 				valid_subjects.append(i)
 			else:
 				train_subjects.append(i)
@@ -61,8 +63,20 @@ class MMWHS_Train:
 		size = [len(train_subjects), len(valid_subjects)]
 		print('Number of train subjects: ',size[0])
 		print('Number of valid subjects: ',size[1])
-		train_gen = data_gen(dir=self.train_dir, batch_size=self.batch_size, patch_dim=self.patch_dim, resize_r=self.resize_r, subjects=train_subjects)
-		valid_gen = data_gen(dir=self.train_dir, batch_size=self.batch_size, patch_dim=self.patch_dim, resize_r=self.resize_r, subjects=valid_subjects)
+		train_gen = data_gen(dir=self.train_dir,
+							 subjects=train_subjects,
+							 image_num=self.image_num,
+							 batch_size=self.batch_size,
+							 patch_dim=self.patch_dim,
+							 resize_r=self.resize_r,
+							 output_chn=self.output_channel)
+		valid_gen = data_gen(dir=self.train_dir,
+							 subjects=valid_subjects,
+							 image_num=self.image_num,
+							 batch_size=self.batch_size,
+							 patch_dim=self.patch_dim,
+							 resize_r=self.resize_r,
+							 output_chn=self.output_channel)
 
 		# model
 		self.model_()
@@ -86,7 +100,7 @@ class MMWHS_Train:
 									lrate=self.learning_rate,
 									n_labels=self.output_channel,
 									n_base_filters=32,
-									batch_normalization=False,
+									batch_normalization=self.batch_norm,
 									deconvolution=True)
 		self.model = model.build()
 
@@ -106,10 +120,10 @@ class MMWHS_Train:
 		start = time.time()
 
 		history = self.model.fit_generator(generator=train,
-											steps_per_epoch=size[0]//self.batch_size,
+											steps_per_epoch=size[0]*50,
 											epochs=self.epochs,
 											validation_data=valid,
-											validation_steps=size[1]//self.batch_size,
+											validation_steps=size[1],
 											class_weight=weights,
 										    verbose=1,
 											callbacks=[ckp,tb])
@@ -136,6 +150,7 @@ class MMWHS_Train:
 		log['EPOCHS'] = self.epochs
 		log['BATCH_SIZE'] =self.batch_size
 		log['LEARNINGRATE'] = self.learning_rate
+		log['OUTPUT_CHANNEL'] = self.output_channel
 
 		m_compile['OPTIMIZER'] = str(type(self.model.optimizer))
 		m_compile['LOSS'] = str(self.model.loss)
