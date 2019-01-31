@@ -6,6 +6,6 @@
 ## 실행
 
 In code directory 
-'''
+```
 python main.py --params=ct_train.json
-'''
+```
