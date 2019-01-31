@@ -1,8 +1,9 @@
 from keras import callbacks as cb
 from keras import models
+from keras.utils import multi_gpu_model
 
 from loaddata import *
-from models import unet_3d, unet_2d
+from models import unet_3d
 
 import os
 import numpy as np
@@ -56,6 +57,7 @@ class MMWHS_Train:
 
 		# model
 		self.model = None
+		self.multi_model = None
 
 		# create directory
 		if not (os.path.isdir(self.model_dir)):
@@ -183,6 +185,7 @@ class MMWHS_Train:
 									batch_normalization=self.batch_norm,
 									deconvolution=True)
 		self.model = model.build()
+		self.multi_model = multi_gpu_model(self.model, gpus=2)
 
 		print('Complete')
 		print('='*100)
@@ -212,14 +215,14 @@ class MMWHS_Train:
 		tb = cb.TensorBoard(log_dir='../tensor_board', histogram_freq=0, batch_size=1, write_graph=True, write_grads=True, write_images=True,  update_freq='epoch')
 		start = time.time()
 
-		history = self.model.fit_generator(generator=train,
-											steps_per_epoch=size[0]*50,
-											epochs=self.epochs,
-											validation_data=valid,
-											validation_steps=size[1],
-											class_weight=weights,
-										    verbose=1,
-											callbacks=[ckp,tb])
+		history = self.multi_model.fit_generator(generator=train,
+												steps_per_epoch=size[0]*50,
+												epochs=self.epochs,
+												validation_data=valid,
+												validation_steps=size[1],
+												class_weight=weights,
+												verbose=1,
+												callbacks=[ckp,tb])
 		e = int(time.time() - start)
 		print('-'*100)
 		print('Complete')
