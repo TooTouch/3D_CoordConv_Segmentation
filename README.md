@@ -7,5 +7,5 @@
 
 In code directory 
 ```
-..\code> python main.py --params=ct_train.json
+..TTokDak\code> python main.py --params=ct_train.json
 ```
