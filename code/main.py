@@ -62,8 +62,10 @@ class MMWHS_Train:
 		# create directory
 		if not (os.path.isdir(self.model_dir)):
 			os.makedirs(self.model_dir)
-		if not (os.path_idsir(self.save_dir)):
+		if not (os.path.isdir(self.save_dir)):
 			os.makedirs(self.save_dir)
+		if not (os.path.isdir(self.log_dir)):
+			os.makedirs(self.log_dir)
 
 
 	def run(self):
