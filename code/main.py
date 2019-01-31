@@ -1,4 +1,5 @@
 from keras import callbacks as cb
+from keras import models
 
 from loaddata import *
 from models import unet_3d, unet_2d
@@ -12,6 +13,9 @@ from pprint import pprint
 from collections import OrderedDict
 import json
 
+from metrics import *
+from utils import *
+
 class MMWHS_Train:
 	def __init__(self, json_file):
 		# directory
@@ -20,6 +24,7 @@ class MMWHS_Train:
 		self.model_dir = os.path.join(self.root_dir, 'model')
 		self.log_dir = os.path.join(self.root_dir, 'log')
 		self.train_dir = os.path.abspath(os.path.join(self.root_dir, 'dataset/ct_train_test/ct_train'))
+
 		# open parameters 
 		f = open(param_dir)
 		params = json.load(f)
@@ -40,17 +45,30 @@ class MMWHS_Train:
 		self.optimizer = params['OPTIMIZER']
 		self.learning_rate = params['LEARNINGRATE']
 		self.batch_norm = bool(params['BATCH_NORM'])
+		self.loss = softmax_weighted_loss
+		self.ovlp_ita = params['OVERLAP_FACTOR']
+		self.rename_map = [0, 205, 420, 500, 550, 600, 820, 850]
 
+		# save
 		self.id = len([name for name in os.listdir(self.log_dir) if self.name in name])
 		self.save_name = self.name + '_' + str(self.id)
-		# model 
+		self.save_dir = os.path.join(self.root_dir, 'predict_image/{}'.format(self.save_name))
+
+		# model
 		self.model = None
 
+		# create directory
+		if not (os.path.isdir(self.model_dir)):
+			os.makedirs(self.model_dir)
+		if not (os.path_idsir(self.save_dir)):
+			os.makedirs(self.save_dir)
 
 
 	def run(self):
-		# Create generator
+		self.train()
+		self.test()
 
+	def train(self):
 		# split train and validation
 		valid_subjects = list()
 		train_subjects = list()
@@ -63,6 +81,8 @@ class MMWHS_Train:
 		size = [len(train_subjects), len(valid_subjects)]
 		print('Number of train subjects: ',size[0])
 		print('Number of valid subjects: ',size[1])
+
+		# Create generator
 		train_gen = data_gen(dir=self.train_dir,
 							 subjects=train_subjects,
 							 image_num=self.image_num,
@@ -70,6 +90,7 @@ class MMWHS_Train:
 							 patch_dim=self.patch_dim,
 							 resize_r=self.resize_r,
 							 output_chn=self.output_channel)
+
 		valid_gen = data_gen(dir=self.train_dir,
 							 subjects=valid_subjects,
 							 image_num=self.image_num,
@@ -83,11 +104,70 @@ class MMWHS_Train:
 		print(self.model.summary())
 
 		# train
-		history, train_time = self.training(train=train_gen, valid=valid_gen, size=size)
+		history, train_time = self.fit(train=train_gen, valid=valid_gen, size=size)
 
 		# report
 		self.report_json(history=history, time=train_time)
 
+		# del
+		del train_ten, valid_gen
+
+
+	def test(self):
+		# Load model
+		self.saveed_model_()
+		print(self.model.summary())
+
+		# predict
+		print('=' * 100)
+		print('Start to predict label')
+		test_list = glob('{}/*.nii/*.nii'.format(self.test_dir))
+
+		for i in tqdm(range(len(test_list))):
+
+			test_i = nib.load(test_list[i])
+			test_i_affine = test_i.affine
+			test_image = test_i.get_data().copy()
+
+			resize_dim = (np.array(test_image.shape) * self.resize_r).astype('int')
+			test_image_resize = resize(test_image, resize_dim, order=1, preserve_range=True, mode='constant')
+
+			test_image_resize = test_image_resize.astype('float32')
+			test_image_resize /= 255.0
+
+			cube_list = decompose_vol2cube(test_image_resize, 1, self.patch_dim, self.ovlp_ita)
+			cube_label_list = []
+			for c in tqdm(range(len(cube_list))):
+				cube2test = cube_list[c]
+				mean_temp = np.mean(cube2test)
+				std_temp = np.std(cube2test)
+				cube2test_norm = (cube2test - mean_temp) / std_temp
+
+				cube_label = self.model.predict(cube2test_norm, verbose=0)
+				cube_label = np.argmax(cube_label, axis=-1)
+				cube_label_list.append(cube_label)
+
+
+			composed_orig = compose_label_cube2vol(cube_label_list, resize_dim, self.patch_dim, self.ovlp_ita, self.output_channel)
+			composed_label = np.zeros(composed_orig.shape, dtype='int16')
+
+			for j in range(len(self.rename_map)):
+				composed_label[composed_orig==j] = self.rename_map[j]
+			composed_label = composed_label.astype('int16')
+
+			composed_label_resize = resize(composed_label, test_image.shape, order=0, preserve_range=True, mode='constant')
+			composed_label_resize = composed_label_resize.astype('int16')
+
+			print('=' * 100)
+			print('Save predict images')
+			try:
+				if not(os.path.isdir(self.save_dir)):
+					os.mkdir(self.save_dir)
+			except:
+				print('Fail to create directory.')
+			labeling_image = nib.Nifti1Image(composed_label_resize, affine=test_i_affine)
+			nib.save(labeling_image, '{}/{}_{}.nii'.format(self.save_dir, self.save_name, i))
+			print('Complete')
 
 
 	def model_(self):
@@ -106,9 +186,22 @@ class MMWHS_Train:
 
 		print('Complete')
 		print('='*100)
-			
 
-	def training(self, train, valid, size, weights=None):
+
+	def saved_model_(self):
+		print('='*100)
+		print('Load model')
+		custom_objects = {'%s'%str(self.loss).split()[1] : self.loss, 'dice_coefficient' : dice_coefficient}
+
+		if self.output_channel > 1:
+			for label_index in range(self.output_channel):
+				custom_objects['DSC_{0}'.format(label_index)] = get_label_dice_coefficient_function(label_index)
+		print(custom_objects.keys())
+		self.model = models.load_model('{}/{}.h5'.format(self.model_dir, self.save_name), custom_objects=custom_objects)
+		print('Complete')
+
+
+	def fit(self, train, valid, size, weights=None):
 		print('='*100)
 		print('Start training')
 		print('-'*100)

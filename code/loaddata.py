@@ -12,13 +12,11 @@ def data_gen(dir, subjects, image_num, batch_size, patch_dim, resize_r, output_c
     rename_map = [0, 205, 420, 500, 550, 600, 820, 850]
 
     # output : resized images, resized labels
+    imgs, labels = load_data_pairs(pair_list, resize_r, output_chn, rename_map)
     while True:
-        for i in range(image_num):
-            idx = np.random.choice(subjects)
-            imgs, labels = load_data_pairs(pair_list[idx*2:idx*2+2], resize_r, output_chn, rename_map)
-            batch_imgs, batch_labels = get_batch_patches(imgs, labels, patch_dim, output_chn, batch_size)
+        batch_imgs, batch_labels = get_batch_patches(imgs, labels, patch_dim, output_chn, batch_size)
 
-            yield batch_imgs, batch_labels
+        yield batch_imgs, batch_labels
 
 
 
