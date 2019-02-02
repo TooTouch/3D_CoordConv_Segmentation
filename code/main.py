@@ -9,6 +9,10 @@ import os
 import numpy as np
 import argparse
 import time
+import nibabel as nib
+from tqdm import tqdm
+from skimage.transform import resize
+from glob import glob
 from pprint import pprint
 
 from collections import OrderedDict
@@ -25,6 +29,7 @@ class MMWHS_Train:
 		self.model_dir = os.path.join(self.root_dir, 'model')
 		self.log_dir = os.path.join(self.root_dir, 'log')
 		self.train_dir = os.path.abspath(os.path.join(self.root_dir, 'dataset/ct_train_test/ct_train'))
+		self.test_dir = os.path.abspath(os.path.join(self.root_dir, 'dataset/ct_train_test/ct_test'))
 
 		# open parameters 
 		f = open(param_dir)
@@ -50,22 +55,22 @@ class MMWHS_Train:
 		self.ovlp_ita = params['OVERLAP_FACTOR']
 		self.rename_map = [0, 205, 420, 500, 550, 600, 820, 850]
 
+		# create directory
+		if not (os.path.isdir(self.model_dir)):
+			os.makedirs(self.model_dir)
+		if not (os.path.isdir(self.log_dir)):
+			os.makedirs(self.log_dir)
+
 		# save
 		self.id = len([name for name in os.listdir(self.log_dir) if self.name in name])
 		self.save_name = self.name + '_' + str(self.id)
 		self.save_dir = os.path.join(self.root_dir, 'predict_image/{}'.format(self.save_name))
+		if not (os.path.isdir(self.save_dir)):
+			os.makedirs(self.save_dir)
 
 		# model
 		self.model = None
 		self.multi_model = None
-
-		# create directory
-		if not (os.path.isdir(self.model_dir)):
-			os.makedirs(self.model_dir)
-		if not (os.path.isdir(self.save_dir)):
-			os.makedirs(self.save_dir)
-		if not (os.path.isdir(self.log_dir)):
-			os.makedirs(self.log_dir)
 
 
 	def run(self):
@@ -74,33 +79,38 @@ class MMWHS_Train:
 
 	def train(self):
 		# split train and validation
-		valid_subjects = list()
-		train_subjects = list()
+		valid_patients = list()
+		train_patients = list()
 		for i in range(0,20):
 			if (i+1) % 4 == 0 and i != 0 :
-				valid_subjects.append(i)
+				valid_patients.append(i)
 			else:
-				train_subjects.append(i)
+				train_patients.append(i)
 
-		size = [len(train_subjects), len(valid_subjects)]
-		print('Number of train subjects: ',size[0])
-		print('Number of valid subjects: ',size[1])
+		size = [len(train_patients), len(valid_patients)]
+		print('Number of train patients: ',size[0])
+		print('train patients: ',train_patients)
+		print('Number of valid patients: ',size[1])
+		print('validatiion patients: ',valid_patients)
+
+		pair_list = glob('{}/*.nii/*.nii'.format(self.train_dir))
+
+		# output : resized images, resized labels
+		imgs, labels = load_data_pairs(pair_list, self.resize_r, self.output_channel, self.rename_map)
 
 		# Create generator
-		train_gen = data_gen(dir=self.train_dir,
-							 subjects=train_subjects,
-							 image_num=self.image_num,
+		train_gen = data_gen(imgs=imgs,
+							 labels=labels,
+							 patients=train_patients,
 							 batch_size=self.batch_size,
 							 patch_dim=self.patch_dim,
-							 resize_r=self.resize_r,
 							 output_chn=self.output_channel)
 
-		valid_gen = data_gen(dir=self.train_dir,
-							 subjects=valid_subjects,
-							 image_num=self.image_num,
+		valid_gen = data_gen(imgs=imgs,
+							 labels=labels,
+							 patients=valid_patients,
 							 batch_size=self.batch_size,
 							 patch_dim=self.patch_dim,
-							 resize_r=self.resize_r,
 							 output_chn=self.output_channel)
 
 		# model
@@ -114,12 +124,12 @@ class MMWHS_Train:
 		self.report_json(history=history, time=train_time)
 
 		# del
-		del train_ten, valid_gen
+		del train_gen, valid_gen
 
 
 	def test(self):
 		# Load model
-		self.saveed_model_()
+		self.saved_model_()
 		print(self.model.summary())
 
 		# predict
@@ -187,7 +197,7 @@ class MMWHS_Train:
 									batch_normalization=self.batch_norm,
 									deconvolution=True)
 		self.model = model.build()
-		self.multi_model = multi_gpu_model(self.model, gpus=2)
+		# self.multi_model = multi_gpu_model(self.model, gpus=2)
 
 		print('Complete')
 		print('='*100)
@@ -214,17 +224,17 @@ class MMWHS_Train:
 		ckp = cb.ModelCheckpoint(self.model_dir + '/' + self.save_name + '.h5', monitor='val_loss', verbose=1, save_best_only=True, mode='auto', period=1)
 		es = cb.EarlyStopping(monitor='val_loss', min_delta=0, patience=10, verbose=1, mode='auto')
 		rlp = cb.ReduceLROnPlateau(monitor='val_loss', factor=0.75, patience=5, verbose=1, mode='auto', min_delta=0.0001, cooldown=0, min_lr=0.000001)
-		tb = cb.TensorBoard(log_dir='../tensor_board', histogram_freq=0, batch_size=1, write_graph=True, write_grads=True, write_images=True,  update_freq='epoch')
+		# tb = cb.TensorBoard(log_dir='../tensor_board', histogram_freq=0, batch_size=1, write_graph=True, write_grads=True, write_images=True, update_freq='epoch')
 		start = time.time()
 
-		history = self.multi_model.fit_generator(generator=train,
-												steps_per_epoch=size[0]*50,
-												epochs=self.epochs,
-												validation_data=valid,
-												validation_steps=size[1],
-												class_weight=weights,
-												verbose=1,
-												callbacks=[ckp,tb])
+		history = self.model.fit_generator(generator=train,
+											steps_per_epoch=size[0],
+											epochs=self.epochs,
+											validation_data=valid,
+											validation_steps=size[1],
+											class_weight=weights,
+											verbose=1,
+											callbacks=[ckp])
 		e = int(time.time() - start)
 		print('-'*100)
 		print('Complete')

@@ -36,17 +36,14 @@ def load_data_pairs(pair_list, resize_r, output_chn, rename_map):
 
 
 
-def get_batch_patches(img_clec, label_clec, patch_dim, output_chn, batch_size, chn=1, flip_flag=True, rot_flag=True):
+def get_batch_patches(img, label, patch_dim, output_chn, batch_size, chn=1, flip_flag=True, rot_flag=True):
     """generate a batch of paired patches for training"""
     batch_img = np.zeros([batch_size, patch_dim, patch_dim, patch_dim, chn]).astype('float32')
     batch_label = np.zeros([batch_size, patch_dim, patch_dim, patch_dim, output_chn]).astype('int32')
 
     for k in range(batch_size):
-        # randomly select an image pair
-        rand_idx = np.arange(len(img_clec))
-        np.random.shuffle(rand_idx)
-        rand_img = img_clec[rand_idx[0]]
-        rand_label = label_clec[rand_idx[0]]
+        rand_img = img
+        rand_label = label
         rand_img = rand_img.astype('float32')
         rand_label = rand_label.astype('int32')
 
