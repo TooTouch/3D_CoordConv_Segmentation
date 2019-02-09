@@ -6,10 +6,11 @@ from keras.engine import Input, Model
 from keras import layers as KL
 from keras.optimizers import Adam
 from keras.models import load_model
+from keras.utils import multi_gpu_model
 
+from Normalization import *
+from CoordNet import *
 from metrics import *
-
-K.set_image_data_format("channels_first")
 
 try:
     from keras.engine import merge
@@ -19,7 +20,7 @@ except ImportError:
 
 class Unet3d:
     def __init__(self, input_size, pool_size=(2, 2, 2), n_labels=1, lrate=0.00001, deconvolution=False,
-                      depth=4, n_base_filters=32, batch_normalization=False):
+                      depth=4, n_base_filters=32, normalization=None, coordnet=False):
         '''
 
         :param input_shape: Shape of the input data (x_size, y_size, z_size, n_chanels). The x, y, and z sizes must be
@@ -48,7 +49,8 @@ class Unet3d:
         self.n_base_filters = n_base_filters
         self.metrics = dice_coefficient
         self.loss = dice_coefficient_loss
-        self.batch_normalization = batch_normalization
+        self.normalization = normalization
+        self.coordnet = coordnet
         if self.n_labels == 1:
             self.activation_name = 'sigmoid'
             self.include_label_wise_dice_coefficients = False
@@ -57,43 +59,43 @@ class Unet3d:
             self.include_label_wise_dice_coefficients = True
 
 
-    def build(self):
-        input_shape = ((self.input_size,) * 3 + (1,))
+    def build(self, input_chn, multi_gpu=1):
+        input_shape = ((self.input_size,) * 3 + (input_chn,))
         inputs = Input(input_shape)
         # Encoder
-        en_conv1_1 = self.create_convolution_block(input_layer=inputs, n_filters=self.n_base_filters*2)
-        en_conv1_2 = self.create_convolution_block(input_layer=en_conv1_1, n_filters=self.n_base_filters*2)
+        en_conv1_1 = self.conv_block(input_layer=inputs, n_filters=self.n_base_filters*2, coordnet=self.coordnet)
+        en_conv1_2 = self.conv_block(input_layer=en_conv1_1, n_filters=self.n_base_filters*2)
         pool1 = KL.MaxPooling3D(pool_size=self.pool_size, data_format='channels_last')(en_conv1_2)
 
-        en_conv2_1 = self.create_convolution_block(input_layer=pool1, n_filters=self.n_base_filters*(2**2))
-        en_conv2_2 = self.create_convolution_block(input_layer=en_conv2_1, n_filters=self.n_base_filters*(2**2))
+        en_conv2_1 = self.conv_block(input_layer=pool1, n_filters=self.n_base_filters*(2**2))
+        en_conv2_2 = self.conv_block(input_layer=en_conv2_1, n_filters=self.n_base_filters*(2**2))
         pool2 = KL.MaxPooling3D(pool_size=self.pool_size, data_format='channels_last')(en_conv2_2)
 
-        en_conv3_1 = self.create_convolution_block(input_layer=pool2, n_filters=self.n_base_filters * (2 ** 3))
-        en_conv3_2 = self.create_convolution_block(input_layer=en_conv3_1, n_filters=self.n_base_filters * (2 ** 3))
+        en_conv3_1 = self.conv_block(input_layer=pool2, n_filters=self.n_base_filters * (2 ** 3))
+        en_conv3_2 = self.conv_block(input_layer=en_conv3_1, n_filters=self.n_base_filters * (2 ** 3))
         pool3 = KL.MaxPooling3D(pool_size=self.pool_size, data_format='channels_last')(en_conv3_2)
 
-        en_conv4_1 = self.create_convolution_block(input_layer=pool3, n_filters=self.n_base_filters * (2 ** 4))
-        en_conv4_2 = self.create_convolution_block(input_layer=en_conv4_1, n_filters=self.n_base_filters * (2 ** 4))
+        en_conv4_1 = self.conv_block(input_layer=pool3, n_filters=self.n_base_filters * (2 ** 4))
+        en_conv4_2 = self.conv_block(input_layer=en_conv4_1, n_filters=self.n_base_filters * (2 ** 4))
 
         # Decoder
         deconv1 = self.get_up_convolution(pool_size=self.pool_size, n_filters=self.n_base_filters * (2 ** 3))(en_conv4_2)
         concat1 = concatenate([deconv1, en_conv3_2], axis=-1)
-        de_conv3_1 =  self.create_convolution_block(input_layer=concat1, n_filters=self.n_base_filters * (2 ** 3))
-        de_conv3_2 =  self.create_convolution_block(input_layer=de_conv3_1, n_filters=self.n_base_filters * (2 ** 3))
+        de_conv3_1 =  self.conv_block(input_layer=concat1, n_filters=self.n_base_filters * (2 ** 3))
+        de_conv3_2 =  self.conv_block(input_layer=de_conv3_1, n_filters=self.n_base_filters * (2 ** 3))
 
         deconv2 = self.get_up_convolution(pool_size=self.pool_size, n_filters=self.n_base_filters * (2 ** 2))(de_conv3_2)
         concat2 = concatenate([deconv2, en_conv2_2], axis=-1)
-        de_conv2_1 = self.create_convolution_block(input_layer=concat2, n_filters=self.n_base_filters * (2 ** 2))
-        de_conv2_2 = self.create_convolution_block(input_layer=de_conv2_1, n_filters=self.n_base_filters * (2 ** 2))
+        de_conv2_1 = self.conv_block(input_layer=concat2, n_filters=self.n_base_filters * (2 ** 2))
+        de_conv2_2 = self.conv_block(input_layer=de_conv2_1, n_filters=self.n_base_filters * (2 ** 2))
 
         deconv3 = self.get_up_convolution(pool_size=self.pool_size, n_filters=self.n_base_filters * 2)(de_conv2_2)
         concat3 = concatenate([deconv3, en_conv1_2], axis=-1)
-        de_conv1_1 = self.create_convolution_block(input_layer=concat3, n_filters=self.n_base_filters * 2)
-        de_conv1_2 = self.create_convolution_block(input_layer=de_conv1_1, n_filters=self.n_base_filters * 2)
+        de_conv1_1 = self.conv_block(input_layer=concat3, n_filters=self.n_base_filters * 2)
+        de_conv1_2 = self.conv_block(input_layer=de_conv1_1, n_filters=self.n_base_filters * 2)
 
         # output
-        conv = self.create_convolution_block(input_layer=de_conv1_2, n_filters=self.n_base_filters)
+        conv = self.conv_block(input_layer=de_conv1_2, n_filters=self.n_base_filters)
         output = KL.Conv3D(self.n_labels, (1, 1, 1), activation=self.activation_name, data_format='channels_last')(conv)
 
         model = Model(inputs=inputs, outputs=output)
@@ -114,13 +116,15 @@ class Unet3d:
                 self.loss = label_wise_dice_coefficient_loss
 
         model.compile(optimizer=Adam(lr=self.lrate), loss=softmax_weighted_loss, metrics=self.metrics)
+        if len(multi_gpu)>1:
+            model = multi_gpu_model(model, gpus=len(multi_gpu))
+            model.compile(optimizer=Adam(lr=self.lrate), loss=softmax_weighted_loss, metrics=self.metrics)
 
         return model
 
 
 
-    def create_convolution_block(self, input_layer, n_filters, kernel=(3, 3, 3), activation=None,
-                                 padding='same', strides=(1, 1, 1), instance_normalization=False):
+    def conv_block(self, input_layer, n_filters, kernel=(3, 3, 3), activation=None, padding='same', strides=(1, 1, 1), coordnet=False):
         """
         :param strides:
         :param input_layer:
@@ -131,10 +135,15 @@ class Unet3d:
         :param padding:
         :return:
         """
+        if coordnet:
+            input_layer = CoordinateChannel3D()(input_layer)
+
         layer = KL.Conv3D(n_filters, kernel, padding=padding, strides=strides, data_format='channels_last')(input_layer)
-        if self.batch_normalization:
+        if self.normalization=='BatchNormalization':
             layer = KL.BatchNormalization(axis=-1)(layer)
-        elif instance_normalization:
+        elif self.normalization=='GroupNormalization':
+            layer = GroupNormalization(groups=8, axis=-1)(layer)
+        elif self.normalization=='InstanceNormalization':
             try:
                 from keras_contrib.layers.normalization import InstanceNormalization
             except ImportError:

@@ -1,6 +1,5 @@
 from keras import callbacks as cb
 from keras import models
-from keras.utils import multi_gpu_model
 
 from loaddata import *
 from models import unet_3d
@@ -9,6 +8,10 @@ import os
 import numpy as np
 import argparse
 import time
+import nibabel as nib
+from tqdm import tqdm
+from skimage.transform import resize
+from glob import glob
 from pprint import pprint
 
 from collections import OrderedDict
@@ -25,6 +28,7 @@ class MMWHS_Train:
 		self.model_dir = os.path.join(self.root_dir, 'model')
 		self.log_dir = os.path.join(self.root_dir, 'log')
 		self.train_dir = os.path.abspath(os.path.join(self.root_dir, 'dataset/ct_train_test/ct_train'))
+		self.test_dir = os.path.abspath(os.path.join(self.root_dir, 'dataset/ct_train_test/ct_test'))
 
 		# open parameters 
 		f = open(param_dir)
@@ -39,34 +43,48 @@ class MMWHS_Train:
 		self.data = params['DATA']
 		self.image_num = params['IMAGE_NUM']
 		self.patch_dim = params['PATCH_DIM']
+		self.train_patch_num = params['TRAIN_PATCH_NUM']
+		self.valid_patch_num = params['VALID_PATCH_NUM']
 		self.resize_r = params['RESIZE_R']
 		self.epochs = params['EPOCHS']
+		self.input_channel = params['INPUT_CHANNEL']
 		self.output_channel = params['OUTPUT_CHANNEL']
 		self.batch_size = params['BATCH_SIZE']
 		self.optimizer = params['OPTIMIZER']
 		self.learning_rate = params['LEARNINGRATE']
-		self.batch_norm = bool(params['BATCH_NORM'])
+		self.normalization = None if params['NORMALIZATION']==0 else params['NORMALIZATION']
+		self.coordnet = bool(params['COORD_NET'])
+		self.image_coord = bool(params['IMAGE_COORD'])
 		self.loss = softmax_weighted_loss
 		self.ovlp_ita = params['OVERLAP_FACTOR']
+		self.multi_gpu = params['MULTI_GPU']
+		self.gpus = ','.join(self.multi_gpu)
 		self.rename_map = [0, 205, 420, 500, 550, 600, 820, 850]
+
+		# create directory
+		if not (os.path.isdir(self.model_dir)):
+			os.makedirs(self.model_dir)
+		if not (os.path.isdir(self.log_dir)):
+			os.makedirs(self.log_dir)
+		if not (os.path.isdir('../history')):
+			os.makedirs('../history')
+
+		# input channel
+		if self.image_coord:
+			self.input_channel += 3
 
 		# save
 		self.id = len([name for name in os.listdir(self.log_dir) if self.name in name])
 		self.save_name = self.name + '_' + str(self.id)
 		self.save_dir = os.path.join(self.root_dir, 'predict_image/{}'.format(self.save_name))
+		if not (os.path.isdir(self.save_dir)):
+			os.makedirs(self.save_dir)
 
 		# model
 		self.model = None
-		self.multi_model = None
 
-		# create directory
-		if not (os.path.isdir(self.model_dir)):
-			os.makedirs(self.model_dir)
-		if not (os.path.isdir(self.save_dir)):
-			os.makedirs(self.save_dir)
-		if not (os.path.isdir(self.log_dir)):
-			os.makedirs(self.log_dir)
-
+		# allow_gpu
+		os.environ["CUDA_VISIBLE_DEVICES"]=self.gpus
 
 	def run(self):
 		self.train()
@@ -74,34 +92,39 @@ class MMWHS_Train:
 
 	def train(self):
 		# split train and validation
-		valid_subjects = list()
-		train_subjects = list()
-		for i in range(0,20):
-			if (i+1) % 4 == 0 and i != 0 :
-				valid_subjects.append(i)
-			else:
-				train_subjects.append(i)
+		patients = np.arange(20)[:2]
+		train_patients = patients[:1]
+		valid_patients = patients[-1:]
 
-		size = [len(train_subjects), len(valid_subjects)]
-		print('Number of train subjects: ',size[0])
-		print('Number of valid subjects: ',size[1])
+		size = [len(train_patients), len(valid_patients)]
+		print('Number of train patients: ',size[0])
+		print('train patients: ',train_patients)
+		print('Number of valid patients: ',size[1])
+		print('validatiion patients: ',valid_patients)
+
+		pair_list = glob('{}/*.nii/*.nii'.format(self.train_dir))
+
+		# output : resized images, resized labels
+		imgs, labels = load_data_pairs(pair_list[:4], self.resize_r, self.output_channel, self.rename_map)
 
 		# Create generator
-		train_gen = data_gen(dir=self.train_dir,
-							 subjects=train_subjects,
-							 image_num=self.image_num,
-							 batch_size=self.batch_size,
-							 patch_dim=self.patch_dim,
-							 resize_r=self.resize_r,
-							 output_chn=self.output_channel)
+		train_gen = trainGenerator(imgs=imgs,
+									 labels=labels,
+									 patients=train_patients,
+									 batch_size=self.batch_size,
+									 patch_dim=self.patch_dim,
+									 patch_size=self.train_patch_num,
+									 output_chn=self.output_channel,
+								     input_chn=self.input_channel,
+								     coordnet=self.image_coord)
 
-		valid_gen = data_gen(dir=self.train_dir,
-							 subjects=valid_subjects,
-							 image_num=self.image_num,
-							 batch_size=self.batch_size,
-							 patch_dim=self.patch_dim,
-							 resize_r=self.resize_r,
-							 output_chn=self.output_channel)
+		valid_gen = validGenerator(imgs=imgs,
+									 labels=labels,
+									 patients=valid_patients,
+									 batch_size=self.batch_size,
+									 patch_dim=self.patch_dim,
+									 patch_size=self.valid_patch_num,
+									 output_chn=self.output_channel)
 
 		# model
 		self.model_()
@@ -111,15 +134,15 @@ class MMWHS_Train:
 		history, train_time = self.fit(train=train_gen, valid=valid_gen, size=size)
 
 		# report
-		self.report_json(history=history, time=train_time)
+		self.report_json(time=train_time)
 
 		# del
-		del train_ten, valid_gen
+		del train_gen, valid_gen
 
 
 	def test(self):
 		# Load model
-		self.saveed_model_()
+		self.saved_model_()
 		print(self.model.summary())
 
 		# predict
@@ -143,11 +166,11 @@ class MMWHS_Train:
 			cube_label_list = []
 			for c in tqdm(range(len(cube_list))):
 				cube2test = cube_list[c]
-				mean_temp = np.mean(cube2test)
-				std_temp = np.std(cube2test)
-				cube2test_norm = (cube2test - mean_temp) / std_temp
+				# mean_temp = np.mean(cube2test)
+				# std_temp = np.std(cube2test)
+				# cube2test_norm = (cube2test - mean_temp) / std_temp
 
-				cube_label = self.model.predict(cube2test_norm, verbose=0)
+				cube_label = self.model.predict(cube2test, verbose=0)
 				cube_label = np.argmax(cube_label, axis=-1)
 				cube_label_list.append(cube_label)
 
@@ -174,6 +197,7 @@ class MMWHS_Train:
 			print('Complete')
 
 
+
 	def model_(self):
 		print('='*100)
 		print('Load Model')
@@ -181,13 +205,14 @@ class MMWHS_Train:
 		print('-'*100)
 
 		model = unet_3d.Unet3d(input_size=self.patch_dim,
-									lrate=self.learning_rate,
-									n_labels=self.output_channel,
-									n_base_filters=32,
-									batch_normalization=self.batch_norm,
-									deconvolution=True)
-		self.model = model.build()
-		self.multi_model = multi_gpu_model(self.model, gpus=2)
+								lrate=self.learning_rate,
+								n_labels=self.output_channel,
+								n_base_filters=32,
+								normalization=self.normalization,
+								deconvolution=True,
+								coordnet=self.coordnet)
+
+		self.model = model.build(input_chn=self.input_channel, multi_gpu=self.multi_gpu)
 
 		print('Complete')
 		print('='*100)
@@ -212,19 +237,20 @@ class MMWHS_Train:
 		print('-'*100)
 
 		ckp = cb.ModelCheckpoint(self.model_dir + '/' + self.save_name + '.h5', monitor='val_loss', verbose=1, save_best_only=True, mode='auto', period=1)
-		es = cb.EarlyStopping(monitor='val_loss', min_delta=0, patience=10, verbose=1, mode='auto')
-		rlp = cb.ReduceLROnPlateau(monitor='val_loss', factor=0.75, patience=5, verbose=1, mode='auto', min_delta=0.0001, cooldown=0, min_lr=0.000001)
-		tb = cb.TensorBoard(log_dir='../tensor_board', histogram_freq=0, batch_size=1, write_graph=True, write_grads=True, write_images=True,  update_freq='epoch')
-		start = time.time()
+		# rlp = cb.ReduceLROnPlateau(monitor='val_loss', factor=0.75, patience=5, verbose=1, mode='auto', min_delta=0.0001, cooldown=0, min_lr=0.000001)
+		csv_logger = cb.CSVLogger('../history/{}.csv'.format(self.save_name))
+		# tb = TensorBoardWrapper(valid, nb_steps=size[1]*self.valid_patch_num, log_dir='./tensor_board/{}'.format(self.save_name), histogram_freq=1, batch_size=1, write_graph=True, write_grads=True, write_images=False)
+		callbacks = [ckp,csv_logger]
 
-		history = self.multi_model.fit_generator(generator=train,
-												steps_per_epoch=size[0]*50,
-												epochs=self.epochs,
-												validation_data=valid,
-												validation_steps=size[1],
-												class_weight=weights,
-												verbose=1,
-												callbacks=[ckp,tb])
+		start = time.time()
+		history = self.model.fit_generator(generator=train,
+											steps_per_epoch=size[0]*self.train_patch_num,
+											epochs=self.epochs,
+											validation_data=valid,
+											validation_steps=size[1]*self.valid_patch_num,
+											class_weight=weights,
+											verbose=1,
+											callbacks=callbacks)
 		e = int(time.time() - start)
 		print('-'*100)
 		print('Complete')
@@ -236,7 +262,7 @@ class MMWHS_Train:
 
 
 
-	def report_json(self, history, time):
+	def report_json(self, time):
 		log = OrderedDict()
 		m_compile = OrderedDict()
 		log['ID'] = self.id
@@ -254,29 +280,6 @@ class MMWHS_Train:
 		m_compile['LOSS'] = str(self.model.loss)
 		m_compile['METRICS'] = str(self.model.metrics_names)
 		log['COMPILE'] = m_compile
-
-		h = history.params
-		h['LOSS'] = history.history['loss']
-		h['DSC_TOTAL'] = history.history['dice_coefficient']
-		h['VAL_LOSS'] = history.history['val_loss']
-		h['VAL_DSC_TOTAL'] = history.history['val_dice_coefficient']
-		h['DSC0'] = history.history['DSC_0']
-		h['DSC1'] = history.history['DSC_1']
-		h['DSC2'] = history.history['DSC_2']
-		h['DSC3'] = history.history['DSC_3']
-		h['DSC4'] = history.history['DSC_4']
-		h['DSC5'] = history.history['DSC_5']
-		h['DSC6'] = history.history['DSC_6']
-		h['DSC7'] = history.history['DSC_7']
-		h['VAL_DSC0'] = history.history['val_DSC_0']
-		h['VAL_DSC1'] = history.history['val_DSC_1']
-		h['VAL_DSC2'] = history.history['val_DSC_2']
-		h['VAL_DSC3'] = history.history['val_DSC_3']
-		h['VAL_DSC4'] = history.history['val_DSC_4']
-		h['VAL_DSC5'] = history.history['val_DSC_5']
-		h['VAL_DSC6'] = history.history['val_DSC_6']
-		h['VAL_DSC7'] = history.history['val_DSC_7']
-		log['HISTORY'] = h
 
 		print('='*100)
 		print('Save log to json file')
