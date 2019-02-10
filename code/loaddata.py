@@ -1,7 +1,7 @@
 import h5py
 import os
 import numpy as np
-import cv2
+#import cv2
 import copy
 
 class Load_Data:
@@ -12,16 +12,17 @@ class Load_Data:
         :param channel: Number of class
         :param dimension: 2D or 3D
         '''
-        self.root = os.path.abspath(os.path.join(os.getcwd(),'../dataset/'))
-
+        #self.root = os.path.abspath(os.path.join(os.getcwd(),'../dataset/'))
+        self.root = r'D:\data\segmentiation'
         self.size = size
         self.dataset = dataset
         self.channel = channel
         self.class_num = class_num
         self.dimension = dimension
 
-        # self.train_dir = os.path.join(self.root, 'h5py/train_hf' + str(self.size) + '_' + str(self.class_num))
-        self.train_dir = os.path.join(self.root, 'h5py/train_hf128_' + str(self.class_num))
+        self.train_dir = os.path.join(self.root, 'h5py/train_hf' + str(self.size) + '_' + str(self.class_num))
+        print("Train Dataset Directory", self.train_dir)
+        #self.train_dir = os.path.join(self.root, 'h5py/train_hf128_' + str(self.class_num))
         # self.train_dir = os.path.join(self.root, 'ct_train_test/ct_train')
 
     def test_load(self):
@@ -50,26 +51,31 @@ class Load_Data:
         """
         Generator to yield inputs and their labels in batches.
         """
+        print("Train Dataset Directory", self.train_dir)
+
         train_hf = h5py.File(self.train_dir, 'r')
         while True:
             # batch_imgs = np.array([]).reshape((0,) + (self.size,) * 3  + (1,))
             # batch_labels = np.array([]).reshape((0,) + (self.size,) * 3 + (self.channel,))
 
+            batch_imgs = np.array([]).reshape((0,) + (64,) * 3  + (1,))
+            batch_labels = np.array([]).reshape((0,) + (64,) * 3 + (self.channel,))
+
             for i in range(batch_size):
                 idx = np.random.choice(subjects)
-                # img = np.array(train_hf['{}_image_{}'.format(self.dataset.lower(),idx)]).reshape((1,) + (self.size,) * 3 + (1,))
-                # label = np.array(train_hf['{}_label_{}'.format(self.dataset.lower(),idx)]).reshape((1,) + (self.size,) * 3 + (self.channel,))
+                img = np.array(train_hf['{}_image_{}'.format(self.dataset.lower(),idx)]).reshape((1,) + (64,) * 3 + (1,))
+                label = np.array(train_hf['{}_label_{}'.format(self.dataset.lower(),idx)]).reshape((1,) + (64,) * 3 + (self.channel,))
 
-                img = np.array(train_hf['{}_image_{}'.format(self.dataset.lower(), idx)]).reshape((1,) + (128,) * 3 + (1,))
-                label = np.array(train_hf['{}_label_{}'.format(self.dataset.lower(), idx)]).reshape((1,) + (128,) * 3 + (self.channel,))
-
+                # img = np.array(train_hf['{}_image_{}'.format(self.dataset.lower(), idx)]).reshape((1,) + (self.size,) * 3 + (1,))
+                # label = np.array(train_hf['{}_label_{}'.format(self.dataset.lower(), idx)]).reshape((1,) + (self.size,) * 3 + (self.channel,))
+                #
                 # img = np.moveaxis(img, -1, 1)
                 # label = np.moveaxis(label, -1, 1)
+                #
+                # batch_imgs, batch_labels = self.get_batch_patches(img, label, 96, 2)
 
-                batch_imgs, batch_labels = self.get_batch_patches(img, label, 96, 2)
-
-                # batch_imgs = np.vstack([batch_imgs, img])
-                # batch_labels = np.vstack([batch_labels, label])
+                batch_imgs = np.vstack([batch_imgs, img])
+                batch_labels = np.vstack([batch_labels, label])
 
 
                 yield batch_imgs, batch_labels

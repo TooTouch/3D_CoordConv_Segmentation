@@ -12,6 +12,8 @@ from pprint import pprint
 from collections import OrderedDict
 import json
 
+
+
 class MMWHS_Train:
 	def __init__(self, json_file):
 		# directory
@@ -19,6 +21,8 @@ class MMWHS_Train:
 		param_dir = os.path.join(self.root_dir + '/training_params/', json_file)
 		self.model_dir = os.path.join(self.root_dir, 'model')
 		self.log_dir = os.path.join(self.root_dir, 'log')
+		self.save_model_dr = os.path.join(self.root_dir, 'saved_models')
+
 		# open parameters 
 		f = open(param_dir)
 		params = json.load(f)
@@ -54,6 +58,10 @@ class MMWHS_Train:
 		# Create generator
 		LD = Load_Data(dataset=self.data, class_num=self.class_num, channel=self.input_channel, dimension=self.dimension, size=self.image_size)
 
+
+
+
+
 		# split train and validation
 		subjects = list(range(20)) # 20 is Number of subjects
 		choice = np.random.choice(subjects, size=int(20*self.cv_rate), replace=False)
@@ -65,6 +73,11 @@ class MMWHS_Train:
 		print('Number of valid subjects: ',size[1])
 		train_gen = LD.data_gen(batch_size=self.batch_size, subjects=train_subjects)
 		valid_gen = LD.data_gen(batch_size=self.batch_size, subjects=valid_subjects)
+
+		####  Checking  Loaded Data shapee
+		for img in train_gen:
+			break
+		print("loaded image shape", img[0][0].shape)
 
 		# model
 		self.model_()

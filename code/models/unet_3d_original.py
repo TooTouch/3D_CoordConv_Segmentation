@@ -20,7 +20,7 @@ except ImportError:
 
 class Unet3d:
     def __init__(self, input_shape, pool_size=(2, 2, 2), n_labels=1, lrate=0.00001, deconvolution=False,
-                 depth=4, n_base_filters=32, batch_normalization=False):
+                      depth=4, n_base_filters=32, batch_normalization=False):
         '''
 
         :param input_shape: Shape of the input data (x_size, y_size, z_size, n_chanels). The x, y, and z sizes must be
@@ -41,7 +41,7 @@ class Unet3d:
         '''
 
         self.input_shape = input_shape
-        print('Input shape: ', self.input_shape)
+        print('Input shape: ',self.input_shape)
         self.pool_size = pool_size
         self.n_labels = n_labels
         self.lrate = lrate
@@ -58,48 +58,45 @@ class Unet3d:
             self.activation_name = 'softmax'
             self.include_label_wise_dice_coefficients = True
 
+
     def build(self):
         inputs = Input(self.input_shape)
-
         # Encoder
-        en_conv1_1 = self.create_convolution_block(input_layer=inputs, n_filters=self.n_base_filters * (2 ** 0),
-                                                   name='env_conv1_1')
-        en_conv1_2 = self.create_convolution_block(input_layer=en_conv1_1, n_filters=self.n_base_filters * (2 ** 0),
-                                                   name='en_conv1_2')
-        pool1 = KL.MaxPooling3D(pool_size=self.pool_size, data_format='channels_last', name='pool1')(en_conv1_2)
+        en_conv1_1 = self.create_convolution_block(input_layer=inputs, n_filters=self.n_base_filters*2)
+        en_conv1_2 = self.create_convolution_block(input_layer=en_conv1_1, n_filters=self.n_base_filters*2)
+        pool1 = KL.MaxPooling3D(pool_size=self.pool_size, data_format='channels_last')(en_conv1_2)
 
-        en_conv2_1 = self.create_convolution_block(input_layer=pool1, n_filters=self.n_base_filters * (2 ** 1),
-                                                   name='en_conv2_1')
-        en_conv2_2 = self.create_convolution_block(input_layer=en_conv2_1, n_filters=self.n_base_filters * (2 ** 1),
-                                                   name='en_conv2_2')
-        pool2 = KL.MaxPooling3D(pool_size=self.pool_size, data_format='channels_last', name='pool2')(en_conv2_2)
+        en_conv2_1 = self.create_convolution_block(input_layer=pool1, n_filters=self.n_base_filters*(2**2))
+        en_conv2_2 = self.create_convolution_block(input_layer=en_conv2_1, n_filters=self.n_base_filters*(2**2))
+        pool2 = KL.MaxPooling3D(pool_size=self.pool_size, data_format='channels_last')(en_conv2_2)
 
-        en_conv3_1 = self.create_convolution_block(input_layer=pool2, n_filters=self.n_base_filters * (2 ** 2),
-                                                   name='en_conv3_1')
-        en_conv3_2 = self.create_convolution_block(input_layer=en_conv3_1, n_filters=self.n_base_filters * (2 ** 2),
-                                                   name='en_conv3_2')
+        en_conv3_1 = self.create_convolution_block(input_layer=pool2, n_filters=self.n_base_filters * (2 ** 3))
+        en_conv3_2 = self.create_convolution_block(input_layer=en_conv3_1, n_filters=self.n_base_filters * (2 ** 3))
+        pool3 = KL.MaxPooling3D(pool_size=self.pool_size, data_format='channels_last')(en_conv3_2)
+
+        en_conv4_1 = self.create_convolution_block(input_layer=pool3, n_filters=self.n_base_filters * (2 ** 4))
+        en_conv4_2 = self.create_convolution_block(input_layer=en_conv4_1, n_filters=self.n_base_filters * (2 ** 4))
 
         # Decoder
-        deconv1 = self.get_up_convolution(pool_size=self.pool_size, n_filters=self.n_base_filters * (2 ** 1),
-                                          name='deconv1')(en_conv3_2)
-        concat1 = concatenate([deconv1, en_conv2_2], axis=-1)
-        de_conv2_1 = self.create_convolution_block(input_layer=concat1, n_filters=self.n_base_filters * (2 ** 1),
-                                                   name='de_conv2_1')
-        de_conv2_2 = self.create_convolution_block(input_layer=de_conv2_1, n_filters=self.n_base_filters * (2 ** 1),
-                                                   name='de_conv2_2')
+        deconv1 = self.get_up_convolution(pool_size=self.pool_size, n_filters=self.n_base_filters * (2 ** 3))(en_conv4_2)
+        concat1 = concatenate([deconv1, en_conv3_2], axis=-1)
+        ########### 이 부분 변경
+        de_conv1_1 =  self.create_convolution_block(input_layer=concat1, n_filters=self.n_base_filters * (2 ** 3))
+        de_conv1_2 =  self.create_convolution_block(input_layer=de_conv1_1, n_filters=self.n_base_filters * (2 ** 3))
 
-        deconv2 = self.get_up_convolution(pool_size=self.pool_size, n_filters=self.n_base_filters * (2 ** 2),
-                                          name='deconv2')(de_conv2_2)
-        concat2 = concatenate([deconv2, en_conv1_2], axis=-1)
-        de_conv1_1 = self.create_convolution_block(input_layer=concat2, n_filters=self.n_base_filters * (2 ** 0),
-                                                   name='de_conv1_1')
-        de_conv1_2 = self.create_convolution_block(input_layer=de_conv1_1, n_filters=self.n_base_filters * (2 ** 0),
-                                                   name='de_conv1_2')
+        deconv2 = self.get_up_convolution(pool_size=self.pool_size, n_filters=self.n_base_filters * (2 ** 2))(de_conv1_2)
+        concat2 = concatenate([deconv2, en_conv2_2], axis=-1)
+        de_conv2_1 = self.create_convolution_block(input_layer=concat2, n_filters=self.n_base_filters * (2 ** 2))
+        de_conv2_2 = self.create_convolution_block(input_layer=de_conv2_1, n_filters=self.n_base_filters * (2 ** 2))
+
+        deconv3 = self.get_up_convolution(pool_size=self.pool_size, n_filters=self.n_base_filters * 2)(de_conv2_2)
+        concat3 = concatenate([deconv3, en_conv1_2], axis=-1)
+        de_conv3_1 = self.create_convolution_block(input_layer=concat3, n_filters=self.n_base_filters * 2)
+        de_conv3_2 = self.create_convolution_block(input_layer=de_conv3_1, n_filters=self.n_base_filters * 2)
 
         # output
-        conv = self.create_convolution_block(input_layer=de_conv1_2, n_filters=self.n_base_filters)
-        output = KL.Conv3D(self.n_labels, (1, 1, 1), activation=self.activation_name, data_format='channels_last',
-                           name='output_layer')(conv)
+        conv = self.create_convolution_block(input_layer=de_conv3_2, n_filters=self.n_base_filters)
+        output = KL.Conv3D(self.n_labels, (1, 1, 1), activation=self.activation_name, data_format='channels_last', name='output_layer')(conv)
 
         model = Model(inputs=inputs, outputs=output)
 
@@ -121,8 +118,10 @@ class Unet3d:
 
         return model
 
+
+
     def create_convolution_block(self, input_layer, n_filters, kernel=(3, 3, 3), activation=None,
-                                 padding='same', strides=(1, 1, 1), instance_normalization=False, name=None):
+                                 padding='same', strides=(1, 1, 1), instance_normalization=False):
         """
         :param strides:
         :param input_layer:
@@ -133,13 +132,7 @@ class Unet3d:
         :param padding:
         :return:
         """
-        if name:
-            layer = KL.Conv3D(n_filters, kernel, padding=padding, strides=strides, data_format='channels_last',
-                              name=name)(input_layer)
-        else:
-            layer = KL.Conv3D(n_filters, kernel, padding=padding, strides=strides, data_format='channels_last')(
-                input_layer)
-
+        layer = KL.Conv3D(n_filters, kernel, padding=padding, strides=strides, data_format='channels_last')(input_layer)
         if self.batch_normalization:
             layer = KL.BatchNormalization(axis=1)(layer)
         elif instance_normalization:
@@ -154,19 +147,10 @@ class Unet3d:
         else:
             return activation()(layer)
 
-    def get_up_convolution(self, n_filters, pool_size, kernel_size=(2, 2, 2), strides=(2, 2, 2), name=None):
+
+    def get_up_convolution(self, n_filters, pool_size, kernel_size=(2, 2, 2), strides=(2, 2, 2)):
         if self.deconvolution:
-            if name:
-
-                return KL.Deconvolution3D(filters=n_filters, kernel_size=kernel_size,
-                                          strides=strides, data_format='channels_last', name=name)
-            else:
-                return KL.Deconvolution3D(filters=n_filters, kernel_size=kernel_size,
-                                          strides=strides, data_format='channels_last')
+            return KL.Deconvolution3D(filters=n_filters, kernel_size=kernel_size,
+                                   strides=strides, data_format='channels_last')
         else:
-            if name:
-                return KL.UpSampling3D(size=pool_size, name=name)
-            else:
-                return KL.UpSampling3D(size=pool_size)
-
-
+            return KL.UpSampling3D(size=pool_size)
