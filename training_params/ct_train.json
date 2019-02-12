@@ -14,9 +14,10 @@
 	"LEARNINGRATE": 0.0001,
 	"NORMALIZATION": 0,
 	"COORD_NET": 0,
-	"IMAGE_COORD": 1,
+	"IMAGE_COORD": 0,
 	"OVERLAP_FACTOR" : 4,
 	"MULTI_GPU" : [
-		"0"
+		"0",
+		"1"
 	]
 }

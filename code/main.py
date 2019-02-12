@@ -74,8 +74,7 @@ class MMWHS_Train:
 			self.input_channel += 3
 
 		# save
-		self.id = len([name for name in os.listdir(self.log_dir) if self.name in name])
-		self.save_name = self.name + '_' + str(self.id)
+		self.save_name = self.name
 		self.save_dir = os.path.join(self.root_dir, 'predict_image/{}'.format(self.save_name))
 		if not (os.path.isdir(self.save_dir)):
 			os.makedirs(self.save_dir)
@@ -85,6 +84,7 @@ class MMWHS_Train:
 
 		# allow_gpu
 		os.environ["CUDA_VISIBLE_DEVICES"]=self.gpus
+		self.multi_model = None
 
 	def run(self):
 		self.train()
@@ -92,9 +92,9 @@ class MMWHS_Train:
 
 	def train(self):
 		# split train and validation
-		patients = np.arange(20)[:2]
-		train_patients = patients[:1]
-		valid_patients = patients[-1:]
+		patients = np.arange(20)
+		train_patients = patients[:-2]
+		valid_patients = patients[-2:]
 
 		size = [len(train_patients), len(valid_patients)]
 		print('Number of train patients: ',size[0])
@@ -105,7 +105,7 @@ class MMWHS_Train:
 		pair_list = glob('{}/*.nii/*.nii'.format(self.train_dir))
 
 		# output : resized images, resized labels
-		imgs, labels = load_data_pairs(pair_list[:4], self.resize_r, self.output_channel, self.rename_map)
+		imgs, labels = load_data_pairs(pair_list, self.resize_r, self.output_channel, self.rename_map)
 
 		# Create generator
 		train_gen = trainGenerator(imgs=imgs,

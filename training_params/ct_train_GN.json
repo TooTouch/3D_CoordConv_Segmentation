@@ -1,0 +1,23 @@
+{
+	"NAME": "UNET_3D_GN",
+	"DATA": "CT",
+	"PATCH_DIM": 96,
+	"RESIZE_R": 0.6,
+	"TRAIN_PATCH_NUM": 20,
+	"VALID_PATCH_NUM": 100,
+	"IMAGE_NUM": 1,
+	"BATCH_SIZE": 2,
+	"EPOCHS": 100,
+	"INPUT_CHANNEL": 1,
+	"OUTPUT_CHANNEL": 8,
+	"OPTIMIZER": "adam",
+	"LEARNINGRATE": 0.0001,
+	"NORMALIZATION": "GroupNormalization",
+	"COORD_NET": 0,
+	"IMAGE_COORD": 0,
+	"OVERLAP_FACTOR" : 4,
+	"MULTI_GPU" : [
+		"2",
+		"3"
+	]
+}
