@@ -37,6 +37,9 @@ def load_data_pairs(pair_list, resize_r, output_chn, rename_map):
         lab_r_data = to_categorical(lab_r_data, output_chn)
         img_data = img_data.reshape(img_data.shape + (1,))
 
+        # rescale
+        img_data = img_data / 255.0
+
         img_list.append(img_data)
         label_list.append(lab_r_data)
 
@@ -66,7 +69,6 @@ def get_batch_patches(img, label, patch_dim, output_chn, batch_size, chn=1, flip
         img_temp = copy.deepcopy(
             img[pos[0]:pos[0] + patch_dim, pos[1]:pos[1] + patch_dim, pos[2]:pos[2] + patch_dim, :])
         # normalization
-        img_temp = img_temp / 255.0
         # mean_temp = np.mean(img_temp)
         # dev_temp = np.std(img_temp)
         # img_norm = (img_temp - mean_temp) / dev_temp
@@ -156,7 +158,7 @@ def fit_cube_param(vol_dim, cube_size, ita):
 def decompose_vol2cube(vol_data, batch_size, cube_size, ita, n_chn=1):
     cube_list = []
     # get parameters for decompose
-    fold, ovlap = fit_cube_param(vol_data.shape, cube_size, ita)
+    fold, ovlap = fit_cube_param(vol_data.shape[:3], cube_size, ita)
     dim = np.asarray(vol_data.shape)
     # decompose
     for R in range(0, fold[0]):
@@ -178,9 +180,9 @@ def decompose_vol2cube(vol_data, batch_size, cube_size, ita, n_chn=1):
                     h_s = dim[2] - cube_size
                     h_e = h_s + cube_size
                 # partition multiple channels
-                cube_temp = vol_data[r_s:r_e, c_s:c_e, h_s:h_e]
+                cube_temp = vol_data[r_s:r_e, c_s:c_e, h_s:h_e, :]
                 cube_batch = np.zeros([batch_size, cube_size, cube_size, cube_size, n_chn]).astype('float32')
-                cube_batch[0, :, :, :, 0] = copy.deepcopy(cube_temp)
+                cube_batch[0, :, :, :, :] = copy.deepcopy(cube_temp)
                 # save
                 cube_list.append(cube_batch)
 

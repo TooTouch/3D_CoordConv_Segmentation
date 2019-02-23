@@ -19,8 +19,8 @@ except ImportError:
 
 
 class Unet3d:
-    def __init__(self, input_size, pool_size=(2, 2, 2), n_labels=1, lrate=0.00001, deconvolution=False,
-                      depth=4, n_base_filters=32, normalization=None, coordnet=False):
+    def __init__(self, input_size, loss, pool_size=(2, 2, 2), n_labels=1, lrate=0.00001, deconvolution=False,
+                      n_base_filters=32, normalization=None, coordnet=False):
         '''
 
         :param input_shape: Shape of the input data (x_size, y_size, z_size, n_chanels). The x, y, and z sizes must be
@@ -45,10 +45,9 @@ class Unet3d:
         self.n_labels = n_labels
         self.lrate = lrate
         self.deconvolution = deconvolution
-        self.depth = depth
         self.n_base_filters = n_base_filters
-        self.metrics = dice_coefficient
-        self.loss = dice_coefficient_loss
+        self.metrics = average_dice_coefficient
+        self.loss = loss
         self.normalization = normalization
         self.coordnet = coordnet
         if self.n_labels == 1:
@@ -77,6 +76,7 @@ class Unet3d:
 
         en_conv4_1 = self.conv_block(input_layer=pool3, n_filters=self.n_base_filters * (2 ** 4))
         en_conv4_2 = self.conv_block(input_layer=en_conv4_1, n_filters=self.n_base_filters * (2 ** 4))
+
 
         # Decoder
         deconv1 = self.get_up_convolution(pool_size=self.pool_size, n_filters=self.n_base_filters * (2 ** 3))(en_conv4_2)
@@ -112,13 +112,11 @@ class Unet3d:
                 self.metrics = self.metrics + label_wise_dice_metrics
             else:
                 self.metrics = label_wise_dice_metrics
-            if self.loss:
-                self.loss = label_wise_dice_coefficient_loss
 
-        model.compile(optimizer=Adam(lr=self.lrate), loss=softmax_weighted_loss, metrics=self.metrics)
+        model.compile(optimizer=Adam(lr=self.lrate), loss=self.loss, metrics=self.metrics)
         if len(multi_gpu)>1:
             model = multi_gpu_model(model, gpus=len(multi_gpu))
-            model.compile(optimizer=Adam(lr=self.lrate), loss=softmax_weighted_loss, metrics=self.metrics)
+            model.compile(optimizer=Adam(lr=self.lrate), loss=self.loss, metrics=self.metrics)
 
         return model
 

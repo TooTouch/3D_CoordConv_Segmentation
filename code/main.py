@@ -1,5 +1,6 @@
 from keras import callbacks as cb
 from keras import models
+from keras.optimizers import Adam
 
 from loaddata import *
 from models import unet_3d
@@ -21,7 +22,7 @@ from metrics import *
 from utils import *
 
 class MMWHS_Train:
-	def __init__(self, json_file):
+	def __init__(self, json_file, retrain, testset):
 		# directory
 		self.root_dir = os.path.abspath(os.path.join(os.getcwd(),'..'))
 		param_dir = os.path.join(self.root_dir + '/training_params/', json_file)
@@ -55,7 +56,7 @@ class MMWHS_Train:
 		self.normalization = None if params['NORMALIZATION']==0 else params['NORMALIZATION']
 		self.coordnet = bool(params['COORD_NET'])
 		self.image_coord = bool(params['IMAGE_COORD'])
-		self.loss = softmax_weighted_loss
+		self.loss = weighted_dice_coefficient_loss
 		self.ovlp_ita = params['OVERLAP_FACTOR']
 		self.multi_gpu = params['MULTI_GPU']
 		self.gpus = ','.join(self.multi_gpu)
@@ -86,15 +87,26 @@ class MMWHS_Train:
 		os.environ["CUDA_VISIBLE_DEVICES"]=self.gpus
 		self.multi_model = None
 
-	def run(self):
-		self.train()
-		self.test()
+		# retrain?
+		self.retrain = retrain
+
+		# testset?
+		self.validation = testset
+
+
+	def run(self, only_test=False):
+		if only_test:
+			self.test(validation=self.validation)
+		else:
+			self.train()
+			self.test(validation=self.validation)
+
 
 	def train(self):
 		# split train and validation
 		patients = np.arange(20)
-		train_patients = patients[:-2]
-		valid_patients = patients[-2:]
+		train_patients = patients[:2]
+		valid_patients = patients[:2]
 
 		size = [len(train_patients), len(valid_patients)]
 		print('Number of train patients: ',size[0])
@@ -105,7 +117,7 @@ class MMWHS_Train:
 		pair_list = glob('{}/*.nii/*.nii'.format(self.train_dir))
 
 		# output : resized images, resized labels
-		imgs, labels = load_data_pairs(pair_list, self.resize_r, self.output_channel, self.rename_map)
+		imgs, labels = load_data_pairs(pair_list[:4], self.resize_r, self.output_channel, self.rename_map)
 
 		# Create generator
 		train_gen = trainGenerator(imgs=imgs,
@@ -127,7 +139,10 @@ class MMWHS_Train:
 									 output_chn=self.output_channel)
 
 		# model
-		self.model_()
+		if self.retrain:
+			self.saved_model_()
+		else:
+			self.model_()
 		print(self.model.summary())
 
 		# train
@@ -140,15 +155,22 @@ class MMWHS_Train:
 		del train_gen, valid_gen
 
 
-	def test(self):
+	def test(self, validation=False):
 		# Load model
 		self.saved_model_()
-		print(self.model.summary())
 
 		# predict
 		print('=' * 100)
 		print('Start to predict label')
 		test_list = glob('{}/*.nii/*.nii'.format(self.test_dir))
+		if validation:
+			test_list = glob('{}/*image.nii/*.nii'.format(self.train_dir))[-2:]
+
+		try:
+			if not (os.path.isdir(self.save_dir)):
+				os.mkdir(self.save_dir)
+		except:
+			print('Fail to create directory.')
 
 		for i in tqdm(range(len(test_list))):
 
@@ -161,8 +183,11 @@ class MMWHS_Train:
 
 			test_image_resize = test_image_resize.astype('float32')
 			test_image_resize /= 255.0
+			test_image_resize = np.expend_dims(test_image_resize, axis=-1)
+			if self.image_coord:
+				test_image_resize = CoordinateChannel3D(test_image_resize)
 
-			cube_list = decompose_vol2cube(test_image_resize, 1, self.patch_dim, self.ovlp_ita)
+			cube_list = decompose_vol2cube(test_image_resize, 1, self.patch_dim, self.ovlp_ita, n_chn=self.input_channel)
 			cube_label_list = []
 			for c in tqdm(range(len(cube_list))):
 				cube2test = cube_list[c]
@@ -184,17 +209,11 @@ class MMWHS_Train:
 
 			composed_label_resize = resize(composed_label, test_image.shape, order=0, preserve_range=True, mode='constant')
 			composed_label_resize = composed_label_resize.astype('int16')
+			print(composed_label_resize.shape)
 
-			print('=' * 100)
-			print('Save predict images')
-			try:
-				if not(os.path.isdir(self.save_dir)):
-					os.mkdir(self.save_dir)
-			except:
-				print('Fail to create directory.')
 			labeling_image = nib.Nifti1Image(composed_label_resize, affine=test_i_affine)
 			nib.save(labeling_image, '{}/{}_{}.nii'.format(self.save_dir, self.save_name, i))
-			print('Complete')
+		print('Complete')
 
 
 
@@ -205,6 +224,7 @@ class MMWHS_Train:
 		print('-'*100)
 
 		model = unet_3d.Unet3d(input_size=self.patch_dim,
+							   loss=self.loss,
 								lrate=self.learning_rate,
 								n_labels=self.output_channel,
 								n_base_filters=32,
@@ -228,6 +248,15 @@ class MMWHS_Train:
 				custom_objects['DSC_{0}'.format(label_index)] = get_label_dice_coefficient_function(label_index)
 		print(custom_objects.keys())
 		self.model = models.load_model('{}/{}.h5'.format(self.model_dir, self.save_name), custom_objects=custom_objects)
+		print(self.model.summary())
+
+		if len(self.multi_gpu) > 1:
+			self.model = self.model.layers[3]
+
+		if self.retrain:
+			custom_objects.pop(list(custom_objects.keys())[0])
+			self.model.compile(optimizer=Adam(lr=self.learning_rate), loss=self.loss, metrics=custom_objects)
+
 		print('Complete')
 
 
@@ -238,7 +267,7 @@ class MMWHS_Train:
 
 		ckp = cb.ModelCheckpoint(self.model_dir + '/' + self.save_name + '.h5', monitor='val_loss', verbose=1, save_best_only=True, mode='auto', period=1)
 		# rlp = cb.ReduceLROnPlateau(monitor='val_loss', factor=0.75, patience=5, verbose=1, mode='auto', min_delta=0.0001, cooldown=0, min_lr=0.000001)
-		csv_logger = cb.CSVLogger('../history/{}.csv'.format(self.save_name))
+		csv_logger = cb.CSVLogger('../history/{}.csv'.format(self.save_name), append=self.retrain)
 		# tb = TensorBoardWrapper(valid, nb_steps=size[1]*self.valid_patch_num, log_dir='./tensor_board/{}'.format(self.save_name), histogram_freq=1, batch_size=1, write_graph=True, write_grads=True, write_images=False)
 		callbacks = [ckp,csv_logger]
 
@@ -251,6 +280,7 @@ class MMWHS_Train:
 											class_weight=weights,
 											verbose=1,
 											callbacks=callbacks)
+
 		e = int(time.time() - start)
 		print('-'*100)
 		print('Complete')
@@ -292,7 +322,10 @@ class MMWHS_Train:
 if __name__=='__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--params', type=str, help='Json file name containig paramters')
+	parser.add_argument('--retrain', type=bool, default=False, help='retrain?')
+	parser.add_argument('--test', type=bool, default=False, help='only test?')
+	parser.add_argument('--validation', type=bool, default=False, help='only validation?')
 	args = parser.parse_args()
 
-	ST = MMWHS_Train(json_file=args.params)
-	ST.run()
+	ST = MMWHS_Train(json_file=args.params, retrain=args.retrain, testset=args.validation)
+	ST.run(only_test=args.test)
