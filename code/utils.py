@@ -12,6 +12,57 @@ import os
 import io
 from keras.callbacks import TensorBoard
 
+from scipy.ndimage.interpolation import map_coordinates
+from scipy.ndimage.filters import gaussian_filter
+import cv2
+import os
+import numpy as np
+from tqdm import tqdm
+
+
+## Elastic Augmentation
+
+
+def elastic_transform3D_fixed(image, alpha, sigma, alpha_affine, random_state=None):
+    """Elastic deformation of images as described in [Simard2003]_ (with modifications).
+    .. [Simard2003] Simard, Steinkraus and Platt, "Best Practices for
+         Convolutional Neural Networks applied to Visual Document Analysis", in
+         Proc. of the International Conference on Document Analysis and
+         Recognition, 2003.
+     Based on https://gist.github.com/erniejunior/601cdf56d2b424757de5
+     From https://www.kaggle.com/bguberfain/elastic-transform-for-data-augmentation
+
+    Using Only map_coordinates for deforming mask
+
+    """
+    # affine and deformation must be slice by slice and fixed for slices
+    if random_state is None:
+        random_state = np.random.RandomState(None)
+    shape = image.shape  # image is contatenated, the first channel [:,:,:,0] is the image, the second channel
+    # [:,:,:,1] is the mask. The two channel are under the same tranformation.
+    shape_size = shape[:-1]  # z y x
+    # Random affine
+    shape_size_aff = shape[1:-1]  # y x
+    center_square = np.float32(shape_size_aff) // 2
+    square_size = min(shape_size_aff) // 3
+    pts1 = np.float32([center_square + square_size, [center_square[0] + square_size, center_square[1] - square_size],
+                       center_square - square_size])
+    pts2 = pts1 + random_state.uniform(-alpha_affine, alpha_affine, size=pts1.shape).astype(np.float32)
+    M = cv2.getAffineTransform(pts1, pts2)
+
+    dx = gaussian_filter((random_state.rand(*shape[1:-1]) * 2 - 1), sigma) * alpha
+    dy = gaussian_filter((random_state.rand(*shape[1:-1]) * 2 - 1), sigma) * alpha
+    x, y = np.meshgrid(np.arange(shape_size_aff[1]), np.arange(shape_size_aff[0]))
+    indices = np.reshape(y + dy, (-1, 1)), np.reshape(x + dx, (-1, 1))
+    new_img2 = np.zeros_like(image)
+    for i in range(shape[0]):
+        new_img2[i, :, :, 0] = map_coordinates(image[i, :, :, 0], indices, order=1, mode='constant').reshape(
+            shape[1:-1])
+        new_img2[i, :, :, 1] = map_coordinates(image[i, :, :, 1], indices, order=0, mode='constant').reshape(
+            shape[1:-1])
+    return np.array(new_img2[:, :, :, 0]), np.array(new_img2[:, :, :, 1])
+
+
 def load_data_pairs(pair_list, resize_r, output_chn, rename_map):
     """load all volume pairs"""
     img_list = []
