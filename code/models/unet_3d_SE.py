@@ -18,9 +18,9 @@ except ImportError:
     from keras.layers.merge import concatenate
 
 
-class Unet3d:
+class Unet3d_se:
     def __init__(self, input_size, loss, pool_size=(2, 2, 2), n_labels=1, lrate=0.00001, deconvolution=False,
-                      n_base_filters=32, normalization=None, coordnet=False):
+                 n_base_filters=32, normalization=None, coordnet=False):
         '''
 
         :param input_shape: Shape of the input data (x_size, y_size, z_size, n_chanels). The x, y, and z sizes must be
@@ -35,7 +35,7 @@ class Unet3d:
         :param n_base_filters: The number of filters that the first layer in the convolution network will have. Following
                 layers will contain a multiple of this number. Lowering this number will likely reduce the amount of memory required
                 to train the model.
-        :param batch_normalization: 
+        :param batch_normalization:
         :param pretrained_weights:
         :param pretrained_model:
         '''
@@ -57,48 +57,65 @@ class Unet3d:
             self.activation_name = 'softmax'
             self.include_label_wise_dice_coefficients = True
 
-
     def build(self, input_chn, multi_gpu=1):
         input_shape = ((self.input_size,) * 3 + (input_chn,))
+
         inputs = Input(input_shape)
         # Encoder
-        en_conv1_1 = self.conv_block(input_layer=inputs, n_filters=self.n_base_filters*2, coordnet=self.coordnet)
-        en_conv1_2 = self.conv_block(input_layer=en_conv1_1, n_filters=self.n_base_filters*2)
+        en_conv1_1 = self.conv_block(input_layer=inputs, n_filters=self.n_base_filters * 2, coordnet=self.coordnet)
+        en_conv1_1 = self.squeeze_excite_block_3d(en_conv1_1)
+        en_conv1_2 = self.conv_block(input_layer=en_conv1_1, n_filters=self.n_base_filters * 2)
+        en_conv1_2 = self.squeeze_excite_block_3d(en_conv1_2)
         pool1 = KL.MaxPooling3D(pool_size=self.pool_size, data_format='channels_last')(en_conv1_2)
 
-        en_conv2_1 = self.conv_block(input_layer=pool1, n_filters=self.n_base_filters*(2**2))
-        en_conv2_2 = self.conv_block(input_layer=en_conv2_1, n_filters=self.n_base_filters*(2**2))
+        en_conv2_1 = self.conv_block(input_layer=pool1, n_filters=self.n_base_filters * (2 ** 2))
+        en_conv2_1 = self.squeeze_excite_block_3d(en_conv2_1)
+        en_conv2_2 = self.conv_block(input_layer=en_conv2_1, n_filters=self.n_base_filters * (2 ** 2))
+        en_conv2_2 = self.squeeze_excite_block_3d(en_conv2_2)
         pool2 = KL.MaxPooling3D(pool_size=self.pool_size, data_format='channels_last')(en_conv2_2)
 
         en_conv3_1 = self.conv_block(input_layer=pool2, n_filters=self.n_base_filters * (2 ** 3))
+        en_conv3_1 = self.squeeze_excite_block_3d(en_conv3_1)
         en_conv3_2 = self.conv_block(input_layer=en_conv3_1, n_filters=self.n_base_filters * (2 ** 3))
+        en_conv3_2 = self.squeeze_excite_block_3d(en_conv3_2)
         pool3 = KL.MaxPooling3D(pool_size=self.pool_size, data_format='channels_last')(en_conv3_2)
 
         en_conv4_1 = self.conv_block(input_layer=pool3, n_filters=self.n_base_filters * (2 ** 4))
+        en_conv4_1 = self.squeeze_excite_block_3d(en_conv4_1)
         en_conv4_2 = self.conv_block(input_layer=en_conv4_1, n_filters=self.n_base_filters * (2 ** 4))
-
+        en_conv4_2 = self.squeeze_excite_block_3d(en_conv4_2)
 
         # Decoder
-        deconv1 = self.get_up_convolution(pool_size=self.pool_size, n_filters=self.n_base_filters * (2 ** 3))(en_conv4_2)
+        deconv1 = self.get_up_convolution(pool_size=self.pool_size, n_filters=self.n_base_filters * (2 ** 3))(
+            en_conv4_2)
         concat1 = concatenate([deconv1, en_conv3_2], axis=-1)
-        de_conv3_1 =  self.conv_block(input_layer=concat1, n_filters=self.n_base_filters * (2 ** 3))
-        de_conv3_2 =  self.conv_block(input_layer=de_conv3_1, n_filters=self.n_base_filters * (2 ** 3))
+        de_conv3_1 = self.conv_block(input_layer=concat1, n_filters=self.n_base_filters * (2 ** 3))
+        de_conv3_1 = self.squeeze_excite_block_3d(de_conv3_1)
+        de_conv3_2 = self.conv_block(input_layer=de_conv3_1, n_filters=self.n_base_filters * (2 ** 3))
+        de_conv3_2 = self.squeeze_excite_block_3d(de_conv3_2)
 
-        deconv2 = self.get_up_convolution(pool_size=self.pool_size, n_filters=self.n_base_filters * (2 ** 2))(de_conv3_2)
+        deconv2 = self.get_up_convolution(pool_size=self.pool_size, n_filters=self.n_base_filters * (2 ** 2))(
+            de_conv3_2)
         concat2 = concatenate([deconv2, en_conv2_2], axis=-1)
         de_conv2_1 = self.conv_block(input_layer=concat2, n_filters=self.n_base_filters * (2 ** 2))
+        de_conv2_1 = self.squeeze_excite_block_3d(de_conv2_1)
         de_conv2_2 = self.conv_block(input_layer=de_conv2_1, n_filters=self.n_base_filters * (2 ** 2))
+        de_conv2_2 = self.squeeze_excite_block_3d(de_conv2_2)
 
         deconv3 = self.get_up_convolution(pool_size=self.pool_size, n_filters=self.n_base_filters * 2)(de_conv2_2)
         concat3 = concatenate([deconv3, en_conv1_2], axis=-1)
         de_conv1_1 = self.conv_block(input_layer=concat3, n_filters=self.n_base_filters * 2)
+        de_conv1_1 = self.squeeze_excite_block_3d(de_conv1_1)
         de_conv1_2 = self.conv_block(input_layer=de_conv1_1, n_filters=self.n_base_filters * 2)
+        de_conv1_2 = self.squeeze_excite_block_3d(de_conv1_2)
 
         # output
         conv = self.conv_block(input_layer=de_conv1_2, n_filters=self.n_base_filters)
         output = KL.Conv3D(self.n_labels, (1, 1, 1), activation=self.activation_name, data_format='channels_last')(conv)
 
         model = Model(inputs=inputs, outputs=output)
+
+        print(model.summary())
 
         # Metrics and Loss function
         if not isinstance(self.metrics, list):
@@ -114,15 +131,15 @@ class Unet3d:
                 self.metrics = label_wise_dice_metrics
 
         model.compile(optimizer=Adam(lr=self.lrate), loss=self.loss, metrics=self.metrics)
-        if len(multi_gpu)>1:
+
+        if len(multi_gpu) > 1:
             model = multi_gpu_model(model, gpus=len(multi_gpu))
             model.compile(optimizer=Adam(lr=self.lrate), loss=self.loss, metrics=self.metrics)
 
         return model
 
-
-
-    def conv_block(self, input_layer, n_filters, kernel=(3, 3, 3), activation=None, padding='same', strides=(1, 1, 1), coordnet=False):
+    def conv_block(self, input_layer, n_filters, kernel=(3, 3, 3), activation=None, padding='same', strides=(1, 1, 1),
+                   coordnet=False):
         """
         :param strides:
         :param input_layer:
@@ -133,15 +150,16 @@ class Unet3d:
         :param padding:
         :return:
         """
+
         if coordnet:
             input_layer = CoordinateChannel3D()(input_layer)
 
         layer = KL.Conv3D(n_filters, kernel, padding=padding, strides=strides, data_format='channels_last')(input_layer)
-        if self.normalization=='BatchNormalization':
+        if self.normalization == 'BatchNormalization':
             layer = KL.BatchNormalization(axis=-1)(layer)
-        elif self.normalization=='GroupNormalization':
+        elif self.normalization == 'GroupNormalization':
             layer = GroupNormalization(groups=8, axis=-1)(layer)
-        elif self.normalization=='InstanceNormalization':
+        elif self.normalization == 'InstanceNormalization':
             try:
                 from keras_contrib.layers.normalization import InstanceNormalization
             except ImportError:
@@ -153,10 +171,38 @@ class Unet3d:
         else:
             return activation()(layer)
 
-
     def get_up_convolution(self, n_filters, pool_size, kernel_size=(2, 2, 2), strides=(2, 2, 2)):
         if self.deconvolution:
             return KL.Deconvolution3D(filters=n_filters, kernel_size=kernel_size,
-                                   strides=strides, data_format='channels_last')
+                                      strides=strides, data_format='channels_last')
         else:
             return KL.UpSampling3D(size=pool_size)
+
+    def squeeze_excite_block_3d(self, input, ratio=16):
+
+        ''' Create a squeeze-excite block
+
+        Ratio를 조정하면서 수축 비율을 정할 수 있다
+
+        Args:
+            input: input tensor
+            filters: number of output filters
+            k: width factor
+        Returns: a keras tensor
+        '''
+        init = input
+        channel_axis = 1 if K.image_data_format() == "channels_first" else -1
+        filters = init._keras_shape[channel_axis]
+        se_shape = (1, 1, filters)
+
+        se = KL.GlobalAveragePooling3D()(init)
+        se = KL.Reshape(se_shape)(se)
+        se = KL.Dense(filters // ratio, activation='relu', kernel_initializer='he_normal', use_bias=False)(se)
+        se = KL.Dense(filters, activation='sigmoid', kernel_initializer='he_normal', use_bias=False)(se)
+
+        if K.image_data_format() == 'channels_first':
+            se = KL.Permute((3, 1, 2))(se)
+
+        x = KL.multiply([init, se])
+        return x
+
