@@ -1,3 +1,5 @@
+![Hits](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2FTooTouch%2F3D_CoordConv_Segmentation)
+
 # Grand Challenge 2017 Multi-Modality Whole Heart Segmentation
 - http://www.sdspeople.fudan.edu.cn/zhuangxiahai/0/mmwhs/
 
